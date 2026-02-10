@@ -33,6 +33,24 @@ class Settings(BaseSettings):
     task_block_search_url: str = "http://localhost:8000/api/task-blocks"
     task_block_search_api_key: str = ""
 
+    # Search Backend Selection
+    web_search_backend: str = "perplexity"  # "perplexity" or "integrated"
+    task_block_search_backend: str = "legacy"  # "legacy" or "integrated"
+
+    # Integrated Search Endpoint (used when backend = "integrated")
+    integrated_search_url: str = ""
+    integrated_search_api_key: str = ""
+    integrated_search_timeout: float = 30.0
+
+    # Integrated Web Search Params
+    integrated_web_search_max_results: int = 3
+    integrated_web_search_model_type: str = "big"
+
+    # Integrated Task Block Search Params
+    integrated_task_block_search_type: str = "llm"  # "llm" or "elastic"
+    integrated_task_block_is_reason_required: bool = True
+    integrated_elastic_task_block_size: int = 5
+
     # Planner Configuration
     planner_max_iterations: int = 10
 

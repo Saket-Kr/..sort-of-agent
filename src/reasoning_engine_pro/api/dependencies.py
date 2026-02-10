@@ -15,6 +15,7 @@ from ..llm.factory import LLMProviderFactory
 from ..observability.tracing import LangfuseTracer
 from ..services.storage.memory import InMemoryStorage
 from ..services.storage.redis import RedisStorage
+from ..services.search.factory import SearchServiceFactory
 from ..tools.factory import ToolFactory
 
 
@@ -110,6 +111,8 @@ class Dependencies:
         """Cleanup resources."""
         if self._storage and isinstance(self._storage, RedisStorage):
             await self._storage.disconnect()
+
+        await SearchServiceFactory.close_integrated_client()
 
         if self._tracer:
             self._tracer.shutdown()
