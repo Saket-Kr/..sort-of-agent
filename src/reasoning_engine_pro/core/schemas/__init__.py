@@ -21,6 +21,7 @@ from .tools import (
     WebSearchOutput,
     WebSearchResult,
 )
+from .analysis import EntityReference, InputAnalysisRequest, InputAnalysisResponse
 from .workflow import Block, Edge, Input, Output, Workflow
 
 __all__ = [
@@ -53,4 +54,8 @@ __all__ = [
     "SearchResultsPayload",
     "WorkflowOutputPayload",
     "ErrorPayload",
+    # Analysis
+    "InputAnalysisRequest",
+    "InputAnalysisResponse",
+    "EntityReference",
 ]

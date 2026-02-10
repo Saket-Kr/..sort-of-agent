@@ -85,6 +85,7 @@ class Dependencies:
             llm_provider=llm,
             tool_registry=tool_registry,
             event_emitter=event_emitter,
+            max_iterations=self.settings.planner_max_iterations,
         )
 
         # Create validator

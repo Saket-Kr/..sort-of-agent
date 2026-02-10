@@ -1,55 +1,17 @@
 """Task block search service."""
 
+import json
 from typing import Any, Optional
 
 import httpx
 
 from ...core.exceptions import ToolExecutionError
 from ...core.schemas.tools import TaskBlockSearchResult
+from .base import BaseSearchService
 
 
-class TaskBlockSearchService:
+class TaskBlockSearchService(BaseSearchService):
     """Service for searching available task blocks."""
-
-    def __init__(
-        self,
-        api_url: str,
-        api_key: str,
-        timeout: float = 30.0,
-        max_results: int = 10,
-    ):
-        """
-        Initialize task block search service.
-
-        Args:
-            api_url: Task block API URL
-            api_key: API key
-            timeout: Request timeout in seconds
-            max_results: Maximum results per query
-        """
-        self._api_url = api_url.rstrip("/")
-        self._api_key = api_key
-        self._timeout = timeout
-        self._max_results = max_results
-        self._client: Optional[httpx.AsyncClient] = None
-
-    async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create HTTP client."""
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                timeout=self._timeout,
-                headers={
-                    "Authorization": f"Bearer {self._api_key}",
-                    "Content-Type": "application/json",
-                },
-            )
-        return self._client
-
-    async def close(self) -> None:
-        """Close HTTP client."""
-        if self._client:
-            await self._client.aclose()
-            self._client = None
 
     async def search(self, query: str) -> list[TaskBlockSearchResult]:
         """
@@ -109,11 +71,11 @@ class TaskBlockSearchService:
                 "task_block_search",
                 {"query": query},
             )
-        except Exception as e:
-            if isinstance(e, ToolExecutionError):
-                raise
+        except ToolExecutionError:
+            raise
+        except json.JSONDecodeError as e:
             raise ToolExecutionError(
-                f"Task block search error: {str(e)}",
+                f"Task block search response parse error: {str(e)}",
                 "task_block_search",
                 {"query": query},
             )

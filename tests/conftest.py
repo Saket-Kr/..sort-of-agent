@@ -11,8 +11,10 @@ from reasoning_engine_pro.api.app import create_app
 from reasoning_engine_pro.config import Settings
 from reasoning_engine_pro.core.enums import MessageRole
 from reasoning_engine_pro.core.schemas.messages import ChatMessage
-from reasoning_engine_pro.core.schemas.workflow import Block, Edge, Workflow
+from reasoning_engine_pro.core.schemas.workflow import Workflow
 from reasoning_engine_pro.services.storage.memory import InMemoryStorage
+
+from tests.fixtures.sample_workflows import SampleWorkflows
 
 
 @pytest.fixture(scope="session")
@@ -45,31 +47,7 @@ def memory_storage() -> InMemoryStorage:
 @pytest.fixture
 def sample_workflow() -> Workflow:
     """Create a sample workflow for testing."""
-    return Workflow(
-        workflow_json=[
-            Block(
-                BlockId="B001",
-                Name="Start",
-                ActionCode="Start",
-                Inputs=[],
-                Outputs=[],
-            ),
-            Block(
-                BlockId="B002",
-                Name="Export Config",
-                ActionCode="ExportConfigurations",
-                Inputs=[
-                    {"Name": "Module", "StaticValue": "HCM"},
-                ],
-                Outputs=[
-                    {"Name": "ConfigFile", "OutputVariableName": "op-B002-ConfigFile"},
-                ],
-            ),
-        ],
-        edges=[
-            Edge(EdgeID="E001", From="B001", To="B002"),
-        ],
-    )
+    return SampleWorkflows.simple_export()
 
 
 @pytest.fixture

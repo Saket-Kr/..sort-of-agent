@@ -14,6 +14,8 @@ class SearchServiceFactory:
         return WebSearchService(
             api_url=settings.web_search_api_url,
             api_key=settings.web_search_api_key,
+            model=settings.web_search_model,
+            max_tokens=settings.web_search_max_tokens,
         )
 
     @staticmethod

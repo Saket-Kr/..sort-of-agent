@@ -6,6 +6,9 @@ from typing import Any, Optional
 import httpx
 
 from ..config import Settings
+from ..observability.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class FewShotRetriever:
@@ -142,8 +145,11 @@ class FewShotRetriever:
         if self._api_url and self._api_key:
             try:
                 return await self._fetch_from_api(query, max_examples)
-            except Exception:
-                pass  # Fall back to defaults
+            except (httpx.HTTPError, httpx.TimeoutException, ValueError, KeyError) as e:
+                logger.warning(
+                    "Few-shot API fetch failed, falling back to defaults",
+                    error=str(e),
+                )
 
         # Return default examples
         return self.DEFAULT_EXAMPLES[:max_examples]

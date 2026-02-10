@@ -1,14 +1,15 @@
 """Web search service using Perplexity API."""
 
-from typing import Optional
+import json
 
 import httpx
 
 from ...core.exceptions import ToolExecutionError
 from ...core.schemas.tools import WebSearchResult
+from .base import BaseSearchService
 
 
-class WebSearchService:
+class WebSearchService(BaseSearchService):
     """Web search service using Perplexity API."""
 
     def __init__(
@@ -17,39 +18,17 @@ class WebSearchService:
         api_key: str,
         timeout: float = 30.0,
         max_results: int = 5,
+        model: str = "llama-3.1-sonar-small-128k-online",
+        max_tokens: int = 1024,
     ):
-        """
-        Initialize web search service.
-
-        Args:
-            api_url: Perplexity API URL
-            api_key: API key
-            timeout: Request timeout in seconds
-            max_results: Maximum results per query
-        """
-        self._api_url = api_url.rstrip("/")
-        self._api_key = api_key
-        self._timeout = timeout
-        self._max_results = max_results
-        self._client: Optional[httpx.AsyncClient] = None
-
-    async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create HTTP client."""
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                timeout=self._timeout,
-                headers={
-                    "Authorization": f"Bearer {self._api_key}",
-                    "Content-Type": "application/json",
-                },
-            )
-        return self._client
-
-    async def close(self) -> None:
-        """Close HTTP client."""
-        if self._client:
-            await self._client.aclose()
-            self._client = None
+        super().__init__(
+            api_url=api_url,
+            api_key=api_key,
+            timeout=timeout,
+            max_results=max_results,
+        )
+        self._model = model
+        self._max_tokens = max_tokens
 
     async def search(self, query: str) -> list[WebSearchResult]:
         """
@@ -64,11 +43,10 @@ class WebSearchService:
         try:
             client = await self._get_client()
 
-            # Perplexity API request format
             response = await client.post(
                 f"{self._api_url}/chat/completions",
                 json={
-                    "model": "llama-3.1-sonar-small-128k-online",
+                    "model": self._model,
                     "messages": [
                         {
                             "role": "system",
@@ -79,7 +57,7 @@ class WebSearchService:
                         },
                         {"role": "user", "content": query},
                     ],
-                    "max_tokens": 1024,
+                    "max_tokens": self._max_tokens,
                     "return_citations": True,
                 },
             )
@@ -94,12 +72,10 @@ class WebSearchService:
             data = response.json()
             results: list[WebSearchResult] = []
 
-            # Parse Perplexity response
             if "choices" in data and data["choices"]:
                 message = data["choices"][0].get("message", {})
                 content = message.get("content", "")
 
-                # Extract citations if available
                 citations = data.get("citations", [])
                 for i, citation in enumerate(citations[: self._max_results]):
                     results.append(
@@ -111,7 +87,6 @@ class WebSearchService:
                         )
                     )
 
-                # If no citations, create a result from content
                 if not results and content:
                     results.append(
                         WebSearchResult(
@@ -136,9 +111,11 @@ class WebSearchService:
                 "web_search",
                 {"query": query},
             )
-        except Exception as e:
+        except ToolExecutionError:
+            raise
+        except json.JSONDecodeError as e:
             raise ToolExecutionError(
-                f"Web search error: {str(e)}",
+                f"Web search response parse error: {str(e)}",
                 "web_search",
                 {"query": query},
             )

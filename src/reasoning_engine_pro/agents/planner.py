@@ -4,6 +4,8 @@ import json
 import re
 from typing import Any, Optional
 
+from pydantic import ValidationError
+
 from ..core.enums import EventType, MessageRole
 from ..core.exceptions import ClarificationRequiredError, WorkflowParseError
 from ..observability.logger import get_logger
@@ -22,13 +24,14 @@ from .prompts.planner import get_planner_system_prompt
 class PlannerAgent:
     """LLM-based planner agent for workflow generation."""
 
-    MAX_ITERATIONS = 10  # Maximum tool call iterations
+    DEFAULT_MAX_ITERATIONS = 10
 
     def __init__(
         self,
         llm_provider: ILLMProvider,
         tool_registry: ToolRegistry,
         event_emitter: Optional[IEventEmitter] = None,
+        max_iterations: int = DEFAULT_MAX_ITERATIONS,
     ):
         """
         Initialize planner agent.
@@ -37,10 +40,12 @@ class PlannerAgent:
             llm_provider: LLM provider for generation
             tool_registry: Registry of available tools
             event_emitter: Optional event emitter for progress updates
+            max_iterations: Maximum tool call iterations before stopping
         """
         self._llm = llm_provider
         self._tools = tool_registry
         self._event_emitter = event_emitter
+        self._max_iterations = max_iterations
 
     def _get_tool_definitions(self) -> list[ToolDefinition]:
         """Get tool definitions for LLM."""
@@ -85,7 +90,7 @@ class PlannerAgent:
         accumulated_response = ""
         iteration = 0
 
-        while iteration < self.MAX_ITERATIONS:
+        while iteration < self._max_iterations:
             iteration += 1
             logger.info(
                 "LLM iteration",
@@ -221,7 +226,7 @@ class PlannerAgent:
                 data = json.loads(match)
                 if "workflow_json" in data and "edges" in data:
                     return Workflow.model_validate(data)
-            except (json.JSONDecodeError, Exception):
+            except (json.JSONDecodeError, ValidationError):
                 continue
 
         # Try to find inline JSON
@@ -250,7 +255,7 @@ class PlannerAgent:
                 data = json.loads(json_str)
                 return Workflow.model_validate(data)
 
-        except (json.JSONDecodeError, Exception):
+        except (json.JSONDecodeError, ValidationError):
             pass
 
         return None

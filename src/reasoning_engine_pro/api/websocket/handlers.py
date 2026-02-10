@@ -34,6 +34,41 @@ class WebSocketHandler:
         self._deps = dependencies
         self._manager = connection_manager
 
+    async def dispatch(
+        self,
+        event_type: str,
+        payload: dict[str, Any],
+        websocket: WebSocket,
+    ) -> None:
+        """
+        Route an incoming WebSocket event to the appropriate handler.
+
+        Args:
+            event_type: The event type string from the client
+            payload: Event payload
+            websocket: Client WebSocket connection
+        """
+        handlers = {
+            "start_chat": self.handle_start_chat,
+            "provide_clarification": self.handle_provide_clarification,
+            "end_chat": self.handle_end_chat,
+            "input_analysis": self.handle_input_analysis,
+        }
+
+        if event_type == "ping":
+            await self.handle_ping(websocket)
+            return
+
+        handler = handlers.get(event_type)
+        if handler is None:
+            logger.warning("Unknown event type", event_type=event_type)
+            await self._send_error(
+                websocket, None, "UNKNOWN_EVENT", f"Unknown event type: {event_type}"
+            )
+            return
+
+        await handler(websocket, payload)
+
     async def handle_start_chat(
         self,
         websocket: WebSocket,

@@ -1,45 +1,18 @@
 """Input analysis endpoint."""
 
+import re
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
 
+from ....core.schemas.analysis import (
+    EntityReference,
+    InputAnalysisRequest,
+    InputAnalysisResponse,
+)
 from ...dependencies import Dependencies, get_dependencies
 
 router = APIRouter()
-
-
-class InputAnalysisRequest(BaseModel):
-    """Request body for input analysis."""
-
-    chat_id: str = Field(..., description="Chat/conversation identifier")
-    message: str = Field(..., description="User message to analyze")
-    context: Optional[dict[str, Any]] = Field(
-        None, description="Optional context information"
-    )
-
-
-class EntityReference(BaseModel):
-    """A referenced entity in the input."""
-
-    type: str
-    value: str
-    start: int
-    end: int
-    confidence: float = 1.0
-
-
-class InputAnalysisResponse(BaseModel):
-    """Response from input analysis."""
-
-    chat_id: str
-    message: str
-    analysis: dict[str, Any]
-    entities: list[EntityReference] = Field(default_factory=list)
-    references: list[str] = Field(default_factory=list)
-    intent: str = "workflow_creation"
-    confidence: float = 1.0
 
 
 @router.post(
@@ -59,7 +32,6 @@ async def analyze_input(
     - Detect referenced variables or blocks
     """
     try:
-        # Perform analysis
         analysis_result = _analyze_message(request.message, request.context)
 
         return InputAnalysisResponse(
@@ -125,7 +97,6 @@ def _analyze_message(
             )
 
     # Detect references (e.g., "op-B001-File")
-    import re
     ref_pattern = r"op-[A-Z]\d{3}-\w+"
     for match in re.finditer(ref_pattern, message):
         references.append(match.group())

@@ -28,8 +28,13 @@ class Settings(BaseSettings):
     # Search Services
     web_search_api_url: str = "https://api.perplexity.ai"
     web_search_api_key: str = ""
+    web_search_model: str = "llama-3.1-sonar-small-128k-online"
+    web_search_max_tokens: int = 1024
     task_block_search_url: str = "http://localhost:8000/api/task-blocks"
     task_block_search_api_key: str = ""
+
+    # Planner Configuration
+    planner_max_iterations: int = 10
 
     # Server Configuration
     ws_host: str = "0.0.0.0"

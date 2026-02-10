@@ -5,23 +5,10 @@ from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, patch
 
 from reasoning_engine_pro.api.app import create_app
-from reasoning_engine_pro.config import Settings
 
 
 class TestWebSocketEndpoint:
     """Integration tests for WebSocket endpoint."""
-
-    @pytest.fixture
-    def test_settings(self):
-        """Create test settings."""
-        return Settings(
-            llm_provider="vllm",
-            llm_base_url="http://localhost:8000/v1",
-            llm_api_key="test-key",
-            llm_model_name="test-model",
-            redis_url="",  # Use in-memory storage
-            max_concurrent_connections=10,
-        )
 
     @pytest.fixture
     def client(self, test_settings):

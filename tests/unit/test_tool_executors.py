@@ -16,6 +16,39 @@ from reasoning_engine_pro.tools.executors.task_block_search import TaskBlockSear
 from reasoning_engine_pro.tools.executors.web_search import WebSearchExecutor
 
 
+@pytest.fixture
+def mock_web_search_service():
+    """Create mock web search service."""
+    service = AsyncMock()
+    service.search = AsyncMock(
+        return_value=[
+            WebSearchResult(
+                title="Test Result",
+                url="https://example.com",
+                snippet="Test snippet",
+            )
+        ]
+    )
+    return service
+
+
+@pytest.fixture
+def mock_task_block_search_service():
+    """Create mock task block search service."""
+    service = AsyncMock()
+    service.search = AsyncMock(
+        return_value=[
+            TaskBlockSearchResult(
+                block_id="export-config",
+                name="Export Configuration",
+                action_code="ExportConfigurations",
+                relevance_score=0.9,
+            )
+        ]
+    )
+    return service
+
+
 class TestClarifyExecutor:
     """Tests for ClarifyExecutor."""
 
@@ -55,83 +88,40 @@ class TestClarifyExecutor:
 class TestWebSearchExecutor:
     """Tests for WebSearchExecutor."""
 
-    @pytest.fixture
-    def mock_search_service(self):
-        """Create mock search service."""
-        service = AsyncMock()
-        service.search = AsyncMock(
-            return_value=[
-                WebSearchResult(
-                    title="Test Result",
-                    url="https://example.com",
-                    snippet="Test snippet",
-                )
-            ]
-        )
-        return service
-
-    def test_tool_name(self, mock_search_service):
+    def test_tool_name(self, mock_web_search_service):
         """Test tool name."""
-        executor = WebSearchExecutor(mock_search_service)
+        executor = WebSearchExecutor(mock_web_search_service)
         assert executor.tool_name == "web_search"
 
-    def test_requires_user_response(self, mock_search_service):
+    def test_requires_user_response(self, mock_web_search_service):
         """Test requires_user_response flag."""
-        executor = WebSearchExecutor(mock_search_service)
+        executor = WebSearchExecutor(mock_web_search_service)
         assert executor.requires_user_response is False
 
     @pytest.mark.asyncio
-    async def test_execute(self, mock_search_service):
+    async def test_execute(self, mock_web_search_service):
         """Test execute performs searches."""
-        executor = WebSearchExecutor(mock_search_service)
+        executor = WebSearchExecutor(mock_web_search_service)
         input_data = WebSearchInput(queries=["query1", "query2"])
 
         result = await executor.execute(input_data)
 
         assert result.query_count == 2
-        assert mock_search_service.search.call_count == 2
+        assert mock_web_search_service.search.call_count == 2
 
 
 class TestTaskBlockSearchExecutor:
     """Tests for TaskBlockSearchExecutor."""
 
-    @pytest.fixture
-    def mock_search_service(self):
-        """Create mock search service."""
-        service = AsyncMock()
-        service.search = AsyncMock(
-            return_value=[
-                TaskBlockSearchResult(
-                    block_id="export-config",
-                    name="Export Configuration",
-                    action_code="ExportConfigurations",
-                    relevance_score=0.9,
-                )
-            ]
-        )
-        return service
-
-    def test_tool_name(self, mock_search_service):
+    def test_tool_name(self, mock_task_block_search_service):
         """Test tool name."""
-        executor = TaskBlockSearchExecutor(mock_search_service)
+        executor = TaskBlockSearchExecutor(mock_task_block_search_service)
         assert executor.tool_name == "task_block_search"
 
     @pytest.mark.asyncio
-    async def test_execute_deduplicates(self, mock_search_service):
+    async def test_execute_deduplicates(self, mock_task_block_search_service):
         """Test execute deduplicates results by block_id."""
-        # Return same block twice
-        mock_search_service.search = AsyncMock(
-            return_value=[
-                TaskBlockSearchResult(
-                    block_id="export-config",
-                    name="Export Configuration",
-                    action_code="ExportConfigurations",
-                    relevance_score=0.9,
-                )
-            ]
-        )
-
-        executor = TaskBlockSearchExecutor(mock_search_service)
+        executor = TaskBlockSearchExecutor(mock_task_block_search_service)
         input_data = TaskBlockSearchInput(queries=["export", "config"])
 
         result = await executor.execute(input_data)
