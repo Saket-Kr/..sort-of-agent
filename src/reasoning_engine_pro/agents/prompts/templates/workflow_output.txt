@@ -1,0 +1,11 @@
+Based on our conversation, here is the complete workflow:
+
+```json
+{workflow_json}
+```
+
+This workflow includes:
+{block_summary}
+
+The workflow will execute in the following order:
+{execution_order}

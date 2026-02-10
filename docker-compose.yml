@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  reasoning-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: reasoning-engine-pro
+    ports:
+      - "${WS_PORT:-8765}:8765"
+    environment:
+      # LLM Configuration
+      - LLM_PROVIDER=${LLM_PROVIDER:-vllm}
+      - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:8000/v1}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_MODEL_NAME=${LLM_MODEL_NAME:-default-model}
+      # Redis
+      - REDIS_URL=redis://redis:6379
+      - REDIS_TTL_SECONDS=${REDIS_TTL_SECONDS:-86400}
+      # Search Services
+      - WEB_SEARCH_API_URL=${WEB_SEARCH_API_URL:-https://api.perplexity.ai}
+      - WEB_SEARCH_API_KEY=${WEB_SEARCH_API_KEY}
+      - TASK_BLOCK_SEARCH_URL=${TASK_BLOCK_SEARCH_URL:-http://host.docker.internal:8000/api/task-blocks}
+      - TASK_BLOCK_SEARCH_API_KEY=${TASK_BLOCK_SEARCH_API_KEY}
+      # Server
+      - WS_HOST=0.0.0.0
+      - WS_PORT=8765
+      - MAX_CONCURRENT_CONNECTIONS=${MAX_CONCURRENT_CONNECTIONS:-50}
+      # Observability
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - reasoning-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: reasoning-engine-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - reasoning-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  reasoning-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+    driver: local
