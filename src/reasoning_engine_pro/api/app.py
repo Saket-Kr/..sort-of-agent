@@ -13,7 +13,8 @@ from ..config import Settings, get_settings
 from ..observability.logger import get_logger, setup_logging
 from .dependencies import Dependencies
 from .rest.router import router as rest_router
-from .websocket.router import init_websocket, router as websocket_router
+from .websocket.router import init_websocket
+from .websocket.router import router as websocket_router
 
 # Path to web client directory
 WEB_CLIENT_DIR = Path(__file__).parent.parent.parent.parent / "web_client"

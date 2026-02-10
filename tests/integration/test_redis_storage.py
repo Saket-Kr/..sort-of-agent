@@ -1,7 +1,8 @@
 """Integration tests for Redis storage."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from reasoning_engine_pro.core.enums import ConversationStatus, MessageRole
 from reasoning_engine_pro.core.schemas.messages import ChatMessage, ConversationState
@@ -142,9 +143,7 @@ class TestRedisStorage:
         assert response is None
 
         # Save response
-        await storage.save_clarification_response(
-            conv_id, clarify_id, "User response"
-        )
+        await storage.save_clarification_response(conv_id, clarify_id, "User response")
 
         # Get response
         response = await storage.get_clarification_response(conv_id, clarify_id)

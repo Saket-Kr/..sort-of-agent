@@ -237,7 +237,9 @@ class WorkflowValidator:
                     f"Edge {edge.EdgeID} has unusual condition: {edge.EdgeCondition}"
                 )
 
-    def _validate_references(self, workflow: Workflow, result: ValidationResult) -> None:
+    def _validate_references(
+        self, workflow: Workflow, result: ValidationResult
+    ) -> None:
         """Validate output variable references."""
         # Collect all available outputs
         available_outputs = set()

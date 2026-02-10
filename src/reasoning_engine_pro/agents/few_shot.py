@@ -67,7 +67,10 @@ class FewShotRetriever:
                                 "Name": "ValidationResult",
                                 "OutputVariableName": "op-B002-ValidationResult",
                             },
-                            {"Name": "IsValid", "OutputVariableName": "op-B002-IsValid"},
+                            {
+                                "Name": "IsValid",
+                                "OutputVariableName": "op-B002-IsValid",
+                            },
                         ],
                     },
                     {

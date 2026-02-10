@@ -1,6 +1,12 @@
 """Sample workflows for testing."""
 
-from reasoning_engine_pro.core.schemas.workflow import Block, Edge, Input, Output, Workflow
+from reasoning_engine_pro.core.schemas.workflow import (
+    Block,
+    Edge,
+    Input,
+    Output,
+    Workflow,
+)
 
 
 class SampleWorkflows:
@@ -27,7 +33,9 @@ class SampleWorkflows:
                         Input(Name="Format", StaticValue="JSON"),
                     ],
                     Outputs=[
-                        Output(Name="ConfigFile", OutputVariableName="op-B002-ConfigFile"),
+                        Output(
+                            Name="ConfigFile", OutputVariableName="op-B002-ConfigFile"
+                        ),
                     ],
                 ),
             ],
@@ -76,7 +84,8 @@ class SampleWorkflows:
                     ],
                     Outputs=[
                         Output(
-                            Name="ImportResult", OutputVariableName="op-B003-ImportResult"
+                            Name="ImportResult",
+                            OutputVariableName="op-B003-ImportResult",
                         ),
                     ],
                 ),

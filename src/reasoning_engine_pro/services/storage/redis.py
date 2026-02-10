@@ -93,7 +93,9 @@ class RedisStorage(IConversationStorage):
         else:
             messages_json = await client.lrange(key, 0, -1)
 
-        messages = [ChatMessage.model_validate_json(msg_json) for msg_json in messages_json]
+        messages = [
+            ChatMessage.model_validate_json(msg_json) for msg_json in messages_json
+        ]
 
         await client.expire(key, self._default_ttl)
         return messages

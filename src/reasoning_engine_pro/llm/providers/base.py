@@ -9,11 +9,7 @@ from openai import APIError, AsyncOpenAI
 
 from ...core.enums import MessageRole
 from ...core.exceptions import LLMProviderError
-from ...core.interfaces.llm_provider import (
-    ILLMProvider,
-    LLMStreamChunk,
-    ToolDefinition,
-)
+from ...core.interfaces.llm_provider import ILLMProvider, LLMStreamChunk, ToolDefinition
 from ...core.schemas.messages import ChatMessage, ToolCall
 
 
@@ -66,9 +62,11 @@ class BaseLLMProvider(ILLMProvider):
                         "type": "function",
                         "function": {
                             "name": tc.name,
-                            "arguments": json.dumps(tc.arguments)
-                            if isinstance(tc.arguments, dict)
-                            else tc.arguments,
+                            "arguments": (
+                                json.dumps(tc.arguments)
+                                if isinstance(tc.arguments, dict)
+                                else tc.arguments
+                            ),
                         },
                     }
                     for tc in msg.tool_calls
@@ -144,7 +142,9 @@ class BaseLLMProvider(ILLMProvider):
 
             async for chunk in stream:
                 delta = chunk.choices[0].delta if chunk.choices else None
-                finish_reason = chunk.choices[0].finish_reason if chunk.choices else None
+                finish_reason = (
+                    chunk.choices[0].finish_reason if chunk.choices else None
+                )
 
                 if delta is None:
                     continue
@@ -168,7 +168,9 @@ class BaseLLMProvider(ILLMProvider):
 
                         if tc_delta.function:
                             if tc_delta.function.name:
-                                accumulated_tool_calls[idx]["name"] = tc_delta.function.name
+                                accumulated_tool_calls[idx][
+                                    "name"
+                                ] = tc_delta.function.name
                             if tc_delta.function.arguments:
                                 accumulated_tool_calls[idx][
                                     "arguments"
@@ -242,9 +244,7 @@ class BaseLLMProvider(ILLMProvider):
         except (httpx.HTTPError, httpx.TimeoutException) as e:
             raise LLMProviderError(f"{self._provider_name} error: {str(e)}")
 
-    def _parse_tool_calls(
-        self, tool_calls_data: list[Any]
-    ) -> list[ToolCall]:
+    def _parse_tool_calls(self, tool_calls_data: list[Any]) -> list[ToolCall]:
         """Parse tool calls from OpenAI response."""
         result = []
         for tc in tool_calls_data:

@@ -1,5 +1,6 @@
 """Pydantic schemas for the reasoning engine."""
 
+from .analysis import EntityReference, InputAnalysisRequest, InputAnalysisResponse
 from .events import (
     ClarificationReceivedPayload,
     ClarificationRequestedPayload,
@@ -21,7 +22,6 @@ from .tools import (
     WebSearchOutput,
     WebSearchResult,
 )
-from .analysis import EntityReference, InputAnalysisRequest, InputAnalysisResponse
 from .workflow import Block, Edge, Input, Output, Workflow
 
 __all__ = [

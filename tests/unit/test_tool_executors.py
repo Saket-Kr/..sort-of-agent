@@ -1,7 +1,8 @@
 """Tests for tool executors."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from reasoning_engine_pro.core.schemas.tools import (
     ClarifyInput,
@@ -12,7 +13,9 @@ from reasoning_engine_pro.core.schemas.tools import (
     WebSearchResult,
 )
 from reasoning_engine_pro.tools.executors.clarify import ClarifyExecutor
-from reasoning_engine_pro.tools.executors.task_block_search import TaskBlockSearchExecutor
+from reasoning_engine_pro.tools.executors.task_block_search import (
+    TaskBlockSearchExecutor,
+)
 from reasoning_engine_pro.tools.executors.web_search import WebSearchExecutor
 
 

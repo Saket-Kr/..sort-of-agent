@@ -107,7 +107,9 @@ class WebSocketHandler:
 
         if not chat_id:
             logger.warning("Missing chat_id in start_chat payload")
-            await self._send_error(websocket, None, "INVALID_PAYLOAD", "Missing chat_id")
+            await self._send_error(
+                websocket, None, "INVALID_PAYLOAD", "Missing chat_id"
+            )
             return
 
         if not message:
@@ -267,10 +269,12 @@ class WebSocketHandler:
             },
         }
 
-        await websocket.send_json({
-            "event": "input_analysis_result",
-            "payload": analysis,
-        })
+        await websocket.send_json(
+            {
+                "event": "input_analysis_result",
+                "payload": analysis,
+            }
+        )
 
     async def _send_error(
         self,
@@ -280,11 +284,13 @@ class WebSocketHandler:
         message: str,
     ) -> None:
         """Send error event."""
-        await websocket.send_json({
-            "event": EventType.ERROR.value,
-            "payload": {
-                "chat_id": chat_id,
-                "error_code": error_code,
-                "message": message,
-            },
-        })
+        await websocket.send_json(
+            {
+                "event": EventType.ERROR.value,
+                "payload": {
+                    "chat_id": chat_id,
+                    "error_code": error_code,
+                    "message": message,
+                },
+            }
+        )

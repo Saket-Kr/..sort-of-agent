@@ -28,7 +28,9 @@ class InMemoryStorage(IConversationStorage):
 
     def _extend_expiry(self, conversation_id: str, ttl_seconds: int) -> None:
         """Extend conversation expiry."""
-        self._expiry[conversation_id] = datetime.utcnow() + timedelta(seconds=ttl_seconds)
+        self._expiry[conversation_id] = datetime.utcnow() + timedelta(
+            seconds=ttl_seconds
+        )
 
     async def save_message(self, conversation_id: str, message: ChatMessage) -> bool:
         """Save a message to conversation history."""
@@ -96,13 +98,17 @@ class InMemoryStorage(IConversationStorage):
 
         # Clean up clarification data
         to_delete = [
-            k for k in self._clarification_requests if k.startswith(f"{conversation_id}:")
+            k
+            for k in self._clarification_requests
+            if k.startswith(f"{conversation_id}:")
         ]
         for key in to_delete:
             self._clarification_requests.pop(key, None)
 
         to_delete = [
-            k for k in self._clarification_responses if k.startswith(f"{conversation_id}:")
+            k
+            for k in self._clarification_responses
+            if k.startswith(f"{conversation_id}:")
         ]
         for key in to_delete:
             self._clarification_responses.pop(key, None)

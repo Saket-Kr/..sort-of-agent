@@ -22,10 +22,12 @@ class WebSocketEventEmitter(IEventEmitter):
     async def emit(self, event_type: EventType, payload: dict[str, Any]) -> None:
         """Emit an event over WebSocket."""
         try:
-            await self._websocket.send_json({
-                "event": event_type.value,
-                "payload": payload,
-            })
+            await self._websocket.send_json(
+                {
+                    "event": event_type.value,
+                    "payload": payload,
+                }
+            )
         except Exception as e:
             logger.error("Failed to emit event", event=event_type.value, error=str(e))
 
@@ -181,6 +183,7 @@ class ConnectionManager:
         async with self._lock:
             if connection_id is None:
                 import uuid
+
                 connection_id = str(uuid.uuid4())
 
             self._active_connections[connection_id] = websocket

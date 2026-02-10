@@ -6,8 +6,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
-from ....config import Settings
 from ...dependencies import Dependencies, get_dependencies
+from ...websocket.router import get_connection_manager
 
 router = APIRouter()
 
@@ -26,7 +26,9 @@ async def root() -> dict[str, str]:
 
 
 @router.get("/health")
-async def health_check(deps: Dependencies = Depends(get_dependencies)) -> dict[str, Any]:
+async def health_check(
+    deps: Dependencies = Depends(get_dependencies),
+) -> dict[str, Any]:
     """
     Health check endpoint.
 
@@ -67,7 +69,7 @@ async def server_info(deps: Dependencies = Depends(get_dependencies)) -> dict[st
     uptime_seconds = time.time() - _start_time
 
     # Get connection stats
-    from ...websocket.router import get_connection_manager
+
     try:
         manager = get_connection_manager()
         ws_stats = {

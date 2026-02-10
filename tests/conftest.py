@@ -13,7 +13,6 @@ from reasoning_engine_pro.core.enums import MessageRole
 from reasoning_engine_pro.core.schemas.messages import ChatMessage
 from reasoning_engine_pro.core.schemas.workflow import Workflow
 from reasoning_engine_pro.services.storage.memory import InMemoryStorage
-
 from tests.fixtures.sample_workflows import SampleWorkflows
 
 
@@ -71,6 +70,7 @@ def mock_llm_provider() -> MagicMock:
     async def mock_generate_stream(*args, **kwargs):
         # Yield a simple response
         from reasoning_engine_pro.core.interfaces.llm_provider import LLMStreamChunk
+
         yield LLMStreamChunk(content="Test response", is_complete=True)
 
     provider.generate_stream = mock_generate_stream

@@ -10,7 +10,8 @@ class Input(BaseModel):
 
     Name: str = Field(..., description="Input parameter name")
     ReferencedOutputVariableName: Optional[str] = Field(
-        None, description="Reference to output from another block (e.g., 'op-B001-File')"
+        None,
+        description="Reference to output from another block (e.g., 'op-B001-File')",
     )
     StaticValue: Optional[str] = Field(None, description="Static value for the input")
     Description: Optional[str] = Field(None, description="Description of the input")
@@ -29,10 +30,13 @@ class Output(BaseModel):
 class Block(BaseModel):
     """A single block in a workflow."""
 
-    BlockId: str = Field(..., description="Unique block identifier (pattern: B001, B002, ...)")
+    BlockId: str = Field(
+        ..., description="Unique block identifier (pattern: B001, B002, ...)"
+    )
     Name: str = Field(..., description="Human-readable block name")
     ActionCode: str = Field(
-        ..., description="Action code (e.g., 'Start', 'ExportConfigurations', 'AskWilfred')"
+        ...,
+        description="Action code (e.g., 'Start', 'ExportConfigurations', 'AskWilfred')",
     )
     Inputs: list[Input] = Field(default_factory=list, description="Block inputs")
     Outputs: list[Output] = Field(default_factory=list, description="Block outputs")
@@ -41,7 +45,9 @@ class Block(BaseModel):
 class Edge(BaseModel):
     """Connection between two blocks in a workflow."""
 
-    EdgeID: str = Field(..., description="Unique edge identifier (pattern: E001, E002, ...)")
+    EdgeID: str = Field(
+        ..., description="Unique edge identifier (pattern: E001, E002, ...)"
+    )
     From: str = Field(..., description="Source BlockId")
     To: str = Field(..., description="Target BlockId")
     EdgeCondition: Optional[str] = Field(
@@ -54,7 +60,9 @@ class Workflow(BaseModel):
 
     workflow_json: list[Block] = Field(..., description="List of workflow blocks")
     edges: list[Edge] = Field(..., description="List of edges connecting blocks")
-    job_name: Optional[str] = Field(None, description="Generated job name for the workflow")
+    job_name: Optional[str] = Field(
+        None, description="Generated job name for the workflow"
+    )
 
     def get_block_by_id(self, block_id: str) -> Block | None:
         """Get a block by its ID."""
@@ -93,9 +101,13 @@ class Workflow(BaseModel):
         # Validate edges reference existing blocks
         for edge in self.edges:
             if edge.From not in block_ids:
-                errors.append(f"Edge {edge.EdgeID} references non-existent block: {edge.From}")
+                errors.append(
+                    f"Edge {edge.EdgeID} references non-existent block: {edge.From}"
+                )
             if edge.To not in block_ids:
-                errors.append(f"Edge {edge.EdgeID} references non-existent block: {edge.To}")
+                errors.append(
+                    f"Edge {edge.EdgeID} references non-existent block: {edge.To}"
+                )
 
         # Validate output variable references in inputs
         output_vars = set()

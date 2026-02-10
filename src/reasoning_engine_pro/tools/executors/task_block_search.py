@@ -13,7 +13,9 @@ if TYPE_CHECKING:
     from ...services.search.task_block import TaskBlockSearchService
 
 
-class TaskBlockSearchExecutor(BaseToolExecutor[TaskBlockSearchInput, TaskBlockSearchOutput]):
+class TaskBlockSearchExecutor(
+    BaseToolExecutor[TaskBlockSearchInput, TaskBlockSearchOutput]
+):
     """Executor for task block search tool."""
 
     def __init__(self, search_service: "TaskBlockSearchService"):
@@ -45,9 +47,10 @@ class TaskBlockSearchExecutor(BaseToolExecutor[TaskBlockSearchInput, TaskBlockSe
         # Deduplicate by block_id, keeping highest relevance score
         seen: dict[str, TaskBlockSearchResult] = {}
         for result in all_results:
-            if result.block_id not in seen or result.relevance_score > seen[
-                result.block_id
-            ].relevance_score:
+            if (
+                result.block_id not in seen
+                or result.relevance_score > seen[result.block_id].relevance_score
+            ):
                 seen[result.block_id] = result
 
         unique_results = list(seen.values())

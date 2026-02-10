@@ -44,13 +44,15 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     # Check connection limit
     if not await _connection_manager.can_connect():
         await websocket.accept()
-        await websocket.send_json({
-            "event": EventType.MAX_CONCURRENT_CONNECTIONS_EXCEEDED.value,
-            "payload": {
-                "message": "Maximum concurrent connections exceeded",
-                "max_connections": _connection_manager.max_connections,
-            },
-        })
+        await websocket.send_json(
+            {
+                "event": EventType.MAX_CONCURRENT_CONNECTIONS_EXCEEDED.value,
+                "payload": {
+                    "message": "Maximum concurrent connections exceeded",
+                    "max_connections": _connection_manager.max_connections,
+                },
+            }
+        )
         await websocket.close(code=4000)
         return
 
@@ -62,7 +64,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             event_type = data.get("event")
             payload = data.get("payload", {})
 
-            logger.info("Received event", event_type=event_type, connection_id=connection_id)
+            logger.info(
+                "Received event", event_type=event_type, connection_id=connection_id
+            )
             await _handler.dispatch(event_type, payload, websocket)
 
     except WebSocketDisconnect:

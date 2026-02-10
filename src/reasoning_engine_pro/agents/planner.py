@@ -138,9 +138,7 @@ class PlannerAgent:
 
             # Execute tools and collect results
             for tool_call in tool_calls:
-                result = await self._execute_tool(
-                    conversation_id, tool_call
-                )
+                result = await self._execute_tool(conversation_id, tool_call)
 
                 # Check for clarification
                 if isinstance(result, ClarifyOutput):
@@ -151,7 +149,11 @@ class PlannerAgent:
                 # Add tool result to messages
                 tool_message = ChatMessage(
                     role=MessageRole.TOOL,
-                    content=json.dumps(result) if isinstance(result, dict) else result.model_dump_json(),
+                    content=(
+                        json.dumps(result)
+                        if isinstance(result, dict)
+                        else result.model_dump_json()
+                    ),
                     tool_call_id=tool_call.id,
                     name=tool_call.name,
                 )
@@ -161,9 +163,7 @@ class PlannerAgent:
         workflow = self._try_parse_workflow(accumulated_response)
         return accumulated_response, workflow
 
-    async def _execute_tool(
-        self, conversation_id: str, tool_call: ToolCall
-    ) -> Any:
+    async def _execute_tool(self, conversation_id: str, tool_call: ToolCall) -> Any:
         """Execute a tool call."""
         executor = self._tools.get(tool_call.name)
         if not executor:

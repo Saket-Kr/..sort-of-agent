@@ -17,8 +17,8 @@ from ..core.exceptions import (
 from ..core.interfaces.event_emitter import IEventEmitter
 from ..core.interfaces.storage import IConversationStorage
 from ..core.schemas.messages import (
-    ClarificationState,
     ChatMessage,
+    ClarificationState,
     ConversationState,
     UserInfo,
 )
@@ -252,9 +252,7 @@ class ConversationOrchestrator:
     ) -> None:
         """Handle workflow output - validate and emit."""
         # Validate workflow
-        validation_result = await self._validator.validate(
-            workflow, conversation_id
-        )
+        validation_result = await self._validator.validate(workflow, conversation_id)
 
         if not validation_result.is_valid:
             # Emit validation errors

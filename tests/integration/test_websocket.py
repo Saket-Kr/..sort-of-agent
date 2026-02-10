@@ -1,8 +1,9 @@
 """Integration tests for WebSocket API."""
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, patch
 
 from reasoning_engine_pro.api.app import create_app
 
@@ -14,6 +15,7 @@ class TestWebSocketEndpoint:
     def client(self, test_settings):
         """Create test client."""
         from reasoning_engine_pro.api.dependencies import Dependencies
+
         Dependencies.reset()
 
         app = create_app(test_settings)
@@ -53,10 +55,12 @@ class TestWebSocketEndpoint:
         """Test start_chat without chat_id."""
         with client.websocket_connect("/ws") as websocket:
             # Send start_chat without chat_id
-            websocket.send_json({
-                "event": "start_chat",
-                "payload": {"message": "Hello"},
-            })
+            websocket.send_json(
+                {
+                    "event": "start_chat",
+                    "payload": {"message": "Hello"},
+                }
+            )
 
             # Should receive error
             response = websocket.receive_json()
@@ -67,10 +71,12 @@ class TestWebSocketEndpoint:
         """Test start_chat without message."""
         with client.websocket_connect("/ws") as websocket:
             # Send start_chat without message
-            websocket.send_json({
-                "event": "start_chat",
-                "payload": {"chat_id": "test-123"},
-            })
+            websocket.send_json(
+                {
+                    "event": "start_chat",
+                    "payload": {"chat_id": "test-123"},
+                }
+            )
 
             # Should receive error
             response = websocket.receive_json()

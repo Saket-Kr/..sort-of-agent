@@ -31,7 +31,10 @@ class MockLLMResponses:
                         {"Name": "Module", "StaticValue": "HCM"},
                     ],
                     "Outputs": [
-                        {"Name": "ConfigFile", "OutputVariableName": "op-B002-ConfigFile"},
+                        {
+                            "Name": "ConfigFile",
+                            "OutputVariableName": "op-B002-ConfigFile",
+                        },
                     ],
                 },
             ],
@@ -55,12 +58,14 @@ This workflow will export HCM configuration."""
             "id": "call_123",
             "function": {
                 "name": "clarify",
-                "arguments": json.dumps({
-                    "questions": [
-                        "Which specific HCM module do you want to export?",
-                        "What format should the export be in?",
-                    ]
-                }),
+                "arguments": json.dumps(
+                    {
+                        "questions": [
+                            "Which specific HCM module do you want to export?",
+                            "What format should the export be in?",
+                        ]
+                    }
+                ),
             },
         }
 
@@ -71,9 +76,9 @@ This workflow will export HCM configuration."""
             "id": "call_456",
             "function": {
                 "name": "web_search",
-                "arguments": json.dumps({
-                    "queries": ["HCM configuration export best practices"]
-                }),
+                "arguments": json.dumps(
+                    {"queries": ["HCM configuration export best practices"]}
+                ),
             },
         }
 
@@ -84,8 +89,6 @@ This workflow will export HCM configuration."""
             "id": "call_789",
             "function": {
                 "name": "task_block_search",
-                "arguments": json.dumps({
-                    "queries": ["export configurations"]
-                }),
+                "arguments": json.dumps({"queries": ["export configurations"]}),
             },
         }
