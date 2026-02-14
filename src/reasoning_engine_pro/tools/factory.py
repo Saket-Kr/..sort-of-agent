@@ -3,7 +3,10 @@
 from ..config import Settings
 from ..services.search.factory import SearchServiceFactory
 from .executors.clarify import ClarifyExecutor
+from .executors.present_answer import PresentAnswerExecutor
+from .executors.submit_workflow import SubmitWorkflowExecutor
 from .executors.task_block_search import TaskBlockSearchExecutor
+from .executors.think_approach import ThinkApproachExecutor
 from .executors.web_search import WebSearchExecutor
 from .registry import ToolRegistry
 
@@ -30,5 +33,8 @@ class ToolFactory:
         registry.register(WebSearchExecutor(web_search_service))
         registry.register(TaskBlockSearchExecutor(task_block_service))
         registry.register(ClarifyExecutor())
+        registry.register(ThinkApproachExecutor())
+        registry.register(PresentAnswerExecutor())
+        registry.register(SubmitWorkflowExecutor())
 
         return registry

@@ -50,18 +50,29 @@ class LLMProviderFactory:
 
     @staticmethod
     def create_from_settings(settings: Settings) -> ILLMProvider:
-        """
-        Create an LLM provider from application settings.
+        """Create planner LLM provider from settings. Alias for create_planner_from_settings."""
+        return LLMProviderFactory.create_planner_from_settings(settings)
 
-        Args:
-            settings: Application settings
+    @staticmethod
+    def create_planner_from_settings(settings: Settings) -> ILLMProvider:
+        """Create the planner (primary reasoning) LLM provider from settings."""
+        return LLMProviderFactory.create(
+            provider_type=settings.planner_llm_provider,
+            base_url=settings.planner_llm_base_url,
+            api_key=settings.planner_llm_api_key,
+            model_name=settings.planner_llm_model_name,
+        )
 
-        Returns:
-            LLM provider instance
+    @staticmethod
+    def create_validator_from_settings(settings: Settings) -> ILLMProvider:
+        """Create the validator (cheaper) LLM provider from settings.
+
+        Used for validation, referencing, summarization, and job naming.
+        Uses the same provider type as planner but with separate URL/key/model.
         """
         return LLMProviderFactory.create(
-            provider_type=settings.llm_provider,
-            base_url=settings.llm_base_url,
-            api_key=settings.llm_api_key,
-            model_name=settings.llm_model_name,
+            provider_type=settings.planner_llm_provider,
+            base_url=settings.validator_llm_base_url,
+            api_key=settings.validator_llm_api_key,
+            model_name=settings.validator_llm_model_name,
         )

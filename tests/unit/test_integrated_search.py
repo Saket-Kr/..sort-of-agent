@@ -1,6 +1,6 @@
 """Tests for integrated search services."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -28,136 +28,130 @@ class TestParseWebSearchResults:
     """Tests for web search response parser."""
 
     def test_standard_format(self):
-        """Test parsing with expected key name."""
+        """Test parsing with actual integrated endpoint format."""
         response = {
-            "web_search_results": [
-                {"title": "Result 1", "url": "https://example.com/1", "snippet": "Snippet 1"},
-                {"title": "Result 2", "url": "https://example.com/2", "snippet": "Snippet 2"},
-            ]
+            "query": "test",
+            "content": (
+                "<web_search>\n"
+                "query='test' results=["
+                "SearchResult(title='Result One', url='https://example.com/1', "
+                "snippet='First snippet', content='Full content'), "
+                "SearchResult(title='Result Two', url='https://example.com/2', "
+                "snippet='Second snippet', content='More content')"
+                "] execution_time=1.5\n"
+                "</web_search>"
+            ),
+            "sources": [],
         }
         results = parse_web_search_results(response, max_results=5)
         assert len(results) == 2
-        assert results[0].title == "Result 1"
+        assert results[0].title == "Result One"
         assert results[0].url == "https://example.com/1"
+        assert results[0].snippet == "First snippet"
         assert results[0].source == "integrated"
+        assert results[1].title == "Result Two"
 
-    def test_nested_format(self):
-        """Test parsing with nested web_search.results key."""
-        response = {
-            "web_search": {
-                "results": [
-                    {"title": "Nested", "url": "https://example.com", "snippet": "Nested snippet"},
-                ]
-            }
-        }
+    def test_empty_on_no_section(self):
+        """Test returns empty when no <web_search> section."""
+        response = {"query": "test", "content": "no tags here", "sources": []}
         results = parse_web_search_results(response)
-        assert len(results) == 1
-        assert results[0].title == "Nested"
+        assert results == []
 
-    def test_fallback_results_key(self):
-        """Test parsing with generic 'results' key."""
-        response = {
-            "results": [
-                {"title": "Generic", "url": "https://example.com", "snippet": "Generic snippet"},
-            ]
-        }
-        results = parse_web_search_results(response)
-        assert len(results) == 1
-
-    def test_summary_fallback(self):
-        """Test fallback to summary when results aren't a list."""
-        response = {"summary": "This is a summary of the search."}
-        results = parse_web_search_results(response)
-        assert len(results) == 1
-        assert "summary" in results[0].snippet.lower()
-
-    def test_empty_on_unparseable(self):
-        """Test graceful empty return for unexpected format."""
-        response = {"unexpected_key": 123}
+    def test_empty_on_no_content(self):
+        """Test returns empty when content is missing."""
+        response = {"query": "test"}
         results = parse_web_search_results(response)
         assert results == []
 
     def test_max_results_limit(self):
         """Test that max_results is respected."""
+        items = ", ".join(
+            f"SearchResult(title='Result {i}', url='https://example.com/{i}', snippet='S{i}', content='C{i}')"
+            for i in range(10)
+        )
         response = {
-            "web_search_results": [
-                {"title": f"Result {i}", "url": f"https://example.com/{i}", "snippet": f"Snippet {i}"}
-                for i in range(10)
-            ]
+            "content": f"<web_search>\nresults=[{items}]\n</web_search>",
         }
         results = parse_web_search_results(response, max_results=3)
         assert len(results) == 3
 
-    def test_alternative_field_names(self):
-        """Test parsing with 'link' instead of 'url' and 'description' instead of 'snippet'."""
+    def test_handles_escaped_quotes(self):
+        """Test parsing when fields contain escaped quotes."""
         response = {
-            "web_search_results": [
-                {"title": "Alt", "link": "https://alt.com", "description": "Alt desc"},
-            ]
+            "content": (
+                "<web_search>\n"
+                "results=[SearchResult(title='It\\'s a test', url='https://example.com', "
+                "snippet='A test', content='Content')]\n"
+                "</web_search>"
+            ),
         }
         results = parse_web_search_results(response)
-        assert results[0].url == "https://alt.com"
-        assert results[0].snippet == "Alt desc"
+        assert len(results) == 1
+        assert results[0].title == "It's a test"
 
 
 class TestParseTaskBlockSearchResults:
     """Tests for task block search response parser."""
 
-    def test_llm_format(self):
-        """Test parsing LLM task block results."""
-        response = {
-            "llm_task_block_search_results": [
-                {
-                    "block_id": "export-config",
-                    "name": "Export Config",
-                    "action_code": "ExportConfigurations",
-                    "relevance_score": 0.95,
-                },
-            ]
-        }
-        results = parse_task_block_search_results(response, search_type="llm")
-        assert len(results) == 1
-        assert results[0].block_id == "export-config"
-        assert results[0].action_code == "ExportConfigurations"
-
     def test_elastic_format(self):
-        """Test parsing elastic task block results."""
+        """Test parsing elastic task block results from actual format."""
         response = {
-            "plain_elastic_task_block_search_results": [
-                {
-                    "block_id": "import-data",
-                    "name": "Import Data",
-                    "action_code": "ImportData",
-                    "score": 0.8,
-                },
-            ]
+            "content": (
+                "<plain_elastic_task_block_search>\n"
+                "query='export' total_results=5 took_ms=100 results=["
+                "TaskSearchResult(id='abc-123', name='Export Config', "
+                "action_code='ExportConfigurations', description='Exports configs', "
+                "score=10.5, similarity=0.95)"
+                "] search_type='hybrid'\n"
+                "</plain_elastic_task_block_search>"
+            ),
         }
         results = parse_task_block_search_results(response, search_type="elastic")
         assert len(results) == 1
-        assert results[0].block_id == "import-data"
-        assert results[0].relevance_score == 0.8
+        assert results[0].block_id == "abc-123"
+        assert results[0].name == "Export Config"
+        assert results[0].action_code == "ExportConfigurations"
+        assert results[0].relevance_score == 0.95
 
-    def test_alternative_field_names(self):
-        """Test parsing with 'id' instead of 'block_id', 'actionCode' instead of 'action_code'."""
+    def test_llm_text_summary(self):
+        """Test parsing LLM task block results (plain text summary)."""
         response = {
-            "llm_task_block_search_results": [
-                {
-                    "id": "alt-block",
-                    "name": "Alt Block",
-                    "actionCode": "AltAction",
-                    "score": 0.7,
-                },
-            ]
+            "content": (
+                "<llm_task_block_search>\n"
+                "The most relevant task is Export Configurations which "
+                "extracts data from Oracle Fusion environments.\n"
+                "</llm_task_block_search>"
+            ),
         }
         results = parse_task_block_search_results(response, search_type="llm")
-        assert results[0].block_id == "alt-block"
-        assert results[0].action_code == "AltAction"
+        assert len(results) == 1
+        assert results[0].block_id == "llm-summary"
+        assert "Export Configurations" in results[0].description
 
-    def test_empty_on_unparseable(self):
-        """Test graceful empty return for unexpected format."""
-        response = {"unexpected": "data"}
-        results = parse_task_block_search_results(response, search_type="llm")
+    def test_empty_on_no_section(self):
+        """Test returns empty when no matching section."""
+        response = {"content": "<web_search>stuff</web_search>"}
+        results = parse_task_block_search_results(response, search_type="elastic")
         assert results == []
+
+    def test_multiple_elastic_results(self):
+        """Test parsing multiple elastic results."""
+        response = {
+            "content": (
+                "<plain_elastic_task_block_search>\n"
+                "results=["
+                "TaskSearchResult(id='a', name='Block A', action_code='ActionA', "
+                "description='Desc A', score=10.0, similarity=1.0), "
+                "TaskSearchResult(id='b', name='Block B', action_code='ActionB', "
+                "description='Desc B', score=8.0, similarity=0.8)"
+                "]\n"
+                "</plain_elastic_task_block_search>"
+            ),
+        }
+        results = parse_task_block_search_results(response, search_type="elastic")
+        assert len(results) == 2
+        assert results[0].block_id == "a"
+        assert results[1].block_id == "b"
 
 
 # --- IntegratedSearchClient Tests ---
@@ -179,8 +173,8 @@ class TestIntegratedSearchClient:
         """Test successful search call."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.text = '{"results": []}'
-        mock_response.json.return_value = {"results": []}
+        mock_response.text = '{"query": "test", "content": "", "sources": []}'
+        mock_response.json.return_value = {"query": "test", "content": "", "sources": []}
         mock_response.raise_for_status = MagicMock()
 
         mock_http_client = AsyncMock()
@@ -193,7 +187,7 @@ class TestIntegratedSearchClient:
             "http://test-host:443/integrated-search",
             json={"web_search": True},
         )
-        assert result == {"results": []}
+        assert result == {"query": "test", "content": "", "sources": []}
 
     @pytest.mark.asyncio
     async def test_auth_header_format(self, client):
@@ -233,9 +227,12 @@ class TestIntegratedWebSearchService:
     async def test_search_builds_correct_request(self, service, mock_client):
         """Test that search builds the correct request body."""
         mock_client.search.return_value = {
-            "web_search_results": [
-                {"title": "Test", "url": "https://test.com", "snippet": "A test result"},
-            ]
+            "content": (
+                "<web_search>\nresults=["
+                "SearchResult(title='Test', url='https://test.com', "
+                "snippet='A test result', content='Full content')"
+                "]\n</web_search>"
+            ),
         }
 
         results = await service.search("test query")
@@ -308,14 +305,11 @@ class TestIntegratedTaskBlockSearchService:
     async def test_llm_search_builds_correct_request(self, llm_service, mock_client):
         """Test LLM search type sets correct flags."""
         mock_client.search.return_value = {
-            "llm_task_block_search_results": [
-                {
-                    "block_id": "export-config",
-                    "name": "Export Config",
-                    "action_code": "ExportConfigurations",
-                    "relevance_score": 0.9,
-                },
-            ]
+            "content": (
+                "<llm_task_block_search>\n"
+                "Export Configurations is the relevant task.\n"
+                "</llm_task_block_search>"
+            ),
         }
 
         results = await llm_service.search("export config")
@@ -323,9 +317,9 @@ class TestIntegratedTaskBlockSearchService:
         call_args = mock_client.search.call_args[0][0]
         assert call_args["llm_task_block_search"] is True
         assert call_args["plain_elastic_task_block_search"] is False
-        assert call_args["web_search"] is False
+        # web_search must be true (API requirement)
+        assert call_args["web_search"] is True
         assert call_args["llm_task_block_search_params"]["query"] == "export config"
-        assert call_args["llm_task_block_search_params"]["is_reason_required"] is True
         assert len(results) == 1
         assert isinstance(results[0], TaskBlockSearchResult)
 
@@ -333,14 +327,15 @@ class TestIntegratedTaskBlockSearchService:
     async def test_elastic_search_builds_correct_request(self, elastic_service, mock_client):
         """Test elastic search type sets correct flags."""
         mock_client.search.return_value = {
-            "plain_elastic_task_block_search_results": [
-                {
-                    "block_id": "import-data",
-                    "name": "Import Data",
-                    "action_code": "ImportData",
-                    "score": 0.8,
-                },
-            ]
+            "content": (
+                "<plain_elastic_task_block_search>\n"
+                "results=["
+                "TaskSearchResult(id='abc', name='Import Data', "
+                "action_code='ImportData', description='Imports data', "
+                "score=8.0, similarity=0.85)"
+                "]\n"
+                "</plain_elastic_task_block_search>"
+            ),
         }
 
         results = await elastic_service.search("import data")
@@ -376,10 +371,10 @@ class TestSearchServiceFactoryRouting:
 
     def _make_settings(self, **overrides) -> Settings:
         base = {
-            "llm_provider": "vllm",
-            "llm_base_url": "http://localhost:8000/v1",
-            "llm_api_key": "test",
-            "llm_model_name": "test-model",
+            "planner_llm_provider": "vllm",
+            "planner_llm_base_url": "http://localhost:8000/v1",
+            "planner_llm_api_key": "test",
+            "planner_llm_model_name": "test-model",
             "redis_url": "",
         }
         base.update(overrides)

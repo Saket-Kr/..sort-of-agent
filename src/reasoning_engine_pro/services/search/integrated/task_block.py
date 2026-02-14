@@ -38,13 +38,24 @@ class IntegratedTaskBlockSearchService:
     async def search(self, query: str) -> list[TaskBlockSearchResult]:
         """Search for task blocks via integrated endpoint."""
         try:
+            # The API requires web_search=true as a primary flag;
+            # task block search alone returns an error.
             request_body: dict[str, Any] = {
-                "web_search": False,
+                "web_search": True,
                 "rag_search": False,
                 "opkey_qdrant_search": False,
                 "web_search_tavily": False,
                 "llm_task_block_search": self._search_type == "llm",
                 "plain_elastic_task_block_search": self._search_type == "elastic",
+                "web_search_params": {
+                    "query": query,
+                    "max_results": 1,
+                    "include_snippets": False,
+                    "use_search_handler": True,
+                    "use_reranker": False,
+                    "summarize_content": False,
+                    "model_type": "big",
+                },
             }
 
             if self._search_type == "llm":

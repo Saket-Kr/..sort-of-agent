@@ -1,6 +1,6 @@
 """In-memory storage implementation for testing."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 
 from ...core.interfaces.storage import IConversationStorage
@@ -24,11 +24,11 @@ class InMemoryStorage(IConversationStorage):
         """Check if conversation has expired."""
         if conversation_id not in self._expiry:
             return True
-        return datetime.utcnow() > self._expiry[conversation_id]
+        return datetime.now(tz=UTC) > self._expiry[conversation_id]
 
     def _extend_expiry(self, conversation_id: str, ttl_seconds: int) -> None:
         """Extend conversation expiry."""
-        self._expiry[conversation_id] = datetime.utcnow() + timedelta(
+        self._expiry[conversation_id] = datetime.now(tz=UTC) + timedelta(
             seconds=ttl_seconds
         )
 

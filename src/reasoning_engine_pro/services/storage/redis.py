@@ -57,7 +57,7 @@ class RedisStorage(IConversationStorage):
     async def disconnect(self) -> None:
         """Disconnect from Redis."""
         if self._client:
-            await self._client.close()
+            await self._client.aclose()
             self._client = None
 
     def _get_client(self) -> redis.Redis:

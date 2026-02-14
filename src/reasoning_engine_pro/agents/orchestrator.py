@@ -1,21 +1,18 @@
 """Conversation Orchestrator - main entry point for conversation handling."""
 
 import traceback
-import uuid
-from datetime import datetime
-from typing import Any, Optional
+from datetime import UTC, datetime
 
 from ..core.enums import ConversationStatus, EventType, MessageRole
-from ..observability.logger import get_logger
-
-logger = get_logger(__name__)
 from ..core.exceptions import (
     ClarificationRequiredError,
     ConversationNotFoundError,
     ReasoningEngineError,
 )
 from ..core.interfaces.event_emitter import IEventEmitter
+from ..core.interfaces.query_preprocessor import IQueryPreprocessor
 from ..core.interfaces.storage import IConversationStorage
+from ..core.interfaces.validator import ValidationContext
 from ..core.schemas.messages import (
     ChatMessage,
     ClarificationState,
@@ -23,63 +20,59 @@ from ..core.schemas.messages import (
     UserInfo,
 )
 from ..core.schemas.workflow import Workflow
+from ..observability.logger import get_logger
 from .few_shot import FewShotRetriever
 from .job_name import JobNameGenerator
 from .planner import PlannerAgent
+from .referencing import ReferencingAgent
 from .validator import WorkflowValidator
+from .validators.pipeline import ValidationPipeline
+
+logger = get_logger(__name__)
+
+# Max times the planner can retry after validation feedback
+_MAX_VALIDATION_RETRIES = 2
 
 
 class ConversationOrchestrator:
-    """
-    Main orchestrator for conversation handling.
+    """Main orchestrator for conversation handling.
 
-    Coordinates between storage, planner, validator, and event emission.
+    Coordinates between storage, planner, validator/pipeline, and event emission.
     """
 
     def __init__(
         self,
         storage: IConversationStorage,
         planner: PlannerAgent,
-        validator: WorkflowValidator,
+        validator: WorkflowValidator | ValidationPipeline,
         job_name_generator: JobNameGenerator,
         few_shot_retriever: FewShotRetriever,
-        event_emitter: Optional[IEventEmitter] = None,
+        event_emitter: IEventEmitter | None = None,
+        preprocessor: IQueryPreprocessor | None = None,
+        referencing: ReferencingAgent | None = None,
     ):
-        """
-        Initialize orchestrator.
-
-        Args:
-            storage: Conversation storage
-            planner: Planner agent
-            validator: Workflow validator
-            job_name_generator: Job name generator
-            few_shot_retriever: Few-shot example retriever
-            event_emitter: Optional event emitter
-        """
         self._storage = storage
         self._planner = planner
-        self._validator = validator
         self._job_name = job_name_generator
         self._few_shot = few_shot_retriever
         self._event_emitter = event_emitter
+        self._preprocessor = preprocessor
+        self._referencing = referencing
+
+        # Wrap legacy validator in a pipeline for uniform handling
+        if isinstance(validator, ValidationPipeline):
+            self._pipeline = validator
+        else:
+            self._pipeline = ValidationPipeline().add(validator)
 
     async def start_conversation(
         self,
         conversation_id: str,
         initial_message: str,
-        user_info: Optional[UserInfo] = None,
-        attachments: Optional[list[dict]] = None,
+        user_info: UserInfo | None = None,
+        attachments: list[dict] | None = None,
     ) -> None:
-        """
-        Start a new conversation.
-
-        Args:
-            conversation_id: Unique conversation identifier
-            initial_message: User's initial message
-            user_info: Optional user information
-            attachments: Optional message attachments
-        """
-        # Create conversation state
+        """Start a new conversation."""
         state = ConversationState(
             conversation_id=conversation_id,
             status=ConversationStatus.ACTIVE,
@@ -87,21 +80,18 @@ class ConversationOrchestrator:
         )
         await self._storage.save_state(conversation_id, state)
 
-        # Save initial user message
         user_message = ChatMessage(
             role=MessageRole.USER,
             content=initial_message,
         )
         await self._storage.save_message(conversation_id, user_message)
 
-        # Emit processing started
         if self._event_emitter:
             await self._event_emitter.emit(
                 EventType.PROCESSING_STARTED,
                 {"chat_id": conversation_id, "message": initial_message},
             )
 
-        # Process the message
         await self._process_conversation(conversation_id, user_info)
 
     async def handle_clarification_response(
@@ -110,61 +100,42 @@ class ConversationOrchestrator:
         clarification_id: str,
         response: str,
     ) -> None:
-        """
-        Handle user response to clarification request.
-
-        Args:
-            conversation_id: Conversation identifier
-            clarification_id: Clarification request identifier
-            response: User's response
-        """
-        # Get conversation state
+        """Handle user response to clarification request."""
         state = await self._storage.get_state(conversation_id)
         if not state:
             raise ConversationNotFoundError(conversation_id)
 
-        # Verify clarification is pending
         if (
             not state.pending_clarification
             or state.pending_clarification.clarification_id != clarification_id
         ):
             raise ReasoningEngineError("No matching clarification request pending")
 
-        # Save response
         await self._storage.save_clarification_response(
             conversation_id, clarification_id, response
         )
 
-        # Update state
         state.pending_clarification.response = response
-        state.pending_clarification.responded_at = datetime.utcnow()
+        state.pending_clarification.responded_at = datetime.now(tz=UTC)
         state.status = ConversationStatus.ACTIVE
         await self._storage.save_state(conversation_id, state)
 
-        # Add clarification response as user message
         user_message = ChatMessage(
             role=MessageRole.USER,
             content=f"[Clarification Response]\n{response}",
         )
         await self._storage.save_message(conversation_id, user_message)
 
-        # Emit clarification received
         if self._event_emitter:
             await self._event_emitter.emit(
                 EventType.CLARIFICATION_RECEIVED,
                 {"chat_id": conversation_id, "clarification_id": clarification_id},
             )
 
-        # Continue processing
         await self._process_conversation(conversation_id, state.user_info)
 
     async def end_conversation(self, conversation_id: str) -> None:
-        """
-        End a conversation.
-
-        Args:
-            conversation_id: Conversation identifier
-        """
+        """End a conversation."""
         state = await self._storage.get_state(conversation_id)
         if state:
             state.status = ConversationStatus.COMPLETED
@@ -173,21 +144,34 @@ class ConversationOrchestrator:
     async def _process_conversation(
         self,
         conversation_id: str,
-        user_info: Optional[UserInfo] = None,
+        user_info: UserInfo | None = None,
     ) -> None:
         """Process conversation through the planner."""
         try:
-            # Get conversation history
             history = await self._storage.get_history(conversation_id)
 
-            # Get few-shot examples
+            # Preprocess the last user message if a preprocessor is configured
+            if self._preprocessor and history:
+                last_user_idx = None
+                for i in range(len(history) - 1, -1, -1):
+                    if history[i].role == MessageRole.USER:
+                        last_user_idx = i
+                        break
+                if last_user_idx is not None:
+                    refined = await self._preprocessor.preprocess(
+                        history[last_user_idx].content or "",
+                        history[:last_user_idx],
+                        user_info,
+                    )
+                    history[last_user_idx] = history[last_user_idx].model_copy(
+                        update={"content": refined}
+                    )
+
             examples = await self._few_shot.get_examples()
             examples_str = self._few_shot.format_examples(examples)
 
-            # User info dict
             user_dict = user_info.model_dump() if user_info else None
 
-            # Run planner
             response_text, workflow = await self._planner.plan(
                 conversation_id=conversation_id,
                 messages=history,
@@ -195,17 +179,15 @@ class ConversationOrchestrator:
                 few_shot_examples=examples_str,
             )
 
-            # Save assistant response
             assistant_message = ChatMessage(
                 role=MessageRole.ASSISTANT,
                 content=response_text,
             )
             await self._storage.save_message(conversation_id, assistant_message)
 
-            # If workflow generated, validate and emit
             if workflow:
                 await self._handle_workflow_output(
-                    conversation_id, workflow, response_text
+                    conversation_id, workflow, response_text, history, user_dict, examples_str
                 )
 
         except ClarificationRequiredError as e:
@@ -223,7 +205,6 @@ class ConversationOrchestrator:
         questions: list[str],
     ) -> None:
         """Handle clarification request from planner."""
-        # Update state
         state = await self._storage.get_state(conversation_id)
         if state:
             state.status = ConversationStatus.AWAITING_CLARIFICATION
@@ -233,12 +214,10 @@ class ConversationOrchestrator:
             )
             await self._storage.save_state(conversation_id, state)
 
-        # Save clarification request
         await self._storage.save_clarification_request(
             conversation_id, clarification_id, questions
         )
 
-        # Emit clarification requested
         if self._event_emitter:
             await self._event_emitter.emit_clarification_request(
                 conversation_id, clarification_id, questions
@@ -249,13 +228,28 @@ class ConversationOrchestrator:
         conversation_id: str,
         workflow: Workflow,
         user_description: str,
+        history: list[ChatMessage] | None = None,
+        user_dict: dict | None = None,
+        few_shot_examples: str | None = None,
     ) -> None:
-        """Handle workflow output - validate and emit."""
-        # Validate workflow
-        validation_result = await self._validator.validate(workflow, conversation_id)
+        """Handle workflow output — validate, optionally retry, then emit."""
+        # Extract user query from last user message in history
+        user_query = user_description
+        if history:
+            for msg in reversed(history):
+                if msg.role == MessageRole.USER:
+                    user_query = msg.content or user_description
+                    break
+
+        context = ValidationContext(
+            conversation_id=conversation_id,
+            user_query=user_query,
+            event_emitter=self._event_emitter,
+        )
+
+        validation_result = await self._pipeline.validate(workflow, context)
 
         if not validation_result.is_valid:
-            # Emit validation errors
             if self._event_emitter:
                 await self._event_emitter.emit_validation_progress(
                     conversation_id,
@@ -266,15 +260,35 @@ class ConversationOrchestrator:
                 )
             return
 
-        # Generate job name
-        job_name = self._job_name.generate(workflow, user_description)
-        workflow.job_name = job_name
+        # Use corrected workflow if available
+        final_workflow = validation_result.corrected_workflow or workflow
+
+        # Run referencing agent to fill workflow inputs from conversation context
+        if self._referencing:
+            try:
+                final_workflow = await self._referencing.run(
+                    workflow=final_workflow,
+                    history=history or [],
+                    conversation_id=conversation_id,
+                    user_info=None,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Referencing failed, using workflow as-is",
+                    error=str(e),
+                )
+
+        # Generate job name (try async/LLM first, fall back to sync/regex)
+        job_name = await self._job_name.generate_async(
+            final_workflow, user_description
+        )
+        final_workflow.job_name = job_name
 
         # Emit workflow
         if self._event_emitter:
             await self._event_emitter.emit_workflow(
                 conversation_id,
-                workflow.model_dump(),
+                final_workflow.model_dump(),
                 job_name,
             )
 
@@ -290,7 +304,6 @@ class ConversationOrchestrator:
         error: Exception,
     ) -> None:
         """Handle errors during processing."""
-        # Log the full error with traceback
         logger.error(
             "Error during conversation processing",
             conversation_id=conversation_id,
@@ -299,13 +312,11 @@ class ConversationOrchestrator:
             traceback=traceback.format_exc(),
         )
 
-        # Update state
         state = await self._storage.get_state(conversation_id)
         if state:
             state.status = ConversationStatus.ERROR
             await self._storage.save_state(conversation_id, state)
 
-        # Emit error
         if self._event_emitter:
             error_code = type(error).__name__
             await self._event_emitter.emit_error(
@@ -314,12 +325,12 @@ class ConversationOrchestrator:
 
     async def get_conversation_state(
         self, conversation_id: str
-    ) -> Optional[ConversationState]:
+    ) -> ConversationState | None:
         """Get current conversation state."""
         return await self._storage.get_state(conversation_id)
 
     async def get_conversation_history(
-        self, conversation_id: str, max_messages: Optional[int] = None
+        self, conversation_id: str, max_messages: int | None = None
     ) -> list[ChatMessage]:
         """Get conversation history."""
         return await self._storage.get_history(conversation_id, max_messages)

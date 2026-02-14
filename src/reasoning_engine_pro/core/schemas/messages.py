@@ -1,6 +1,10 @@
 """Message and conversation schemas."""
 
-from datetime import datetime
+from datetime import UTC, datetime
+
+
+def _utcnow() -> datetime:
+    return datetime.now(tz=UTC)
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -42,7 +46,7 @@ class ChatMessage(BaseModel):
     tool_call_id: Optional[str] = None  # For tool result messages
     name: Optional[str] = None  # Tool name for tool result messages
     attachments: list[Attachment] = Field(default_factory=list)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=_utcnow)
 
     def to_openai_format(self) -> dict[str, Any]:
         """Convert to OpenAI API message format."""
@@ -86,7 +90,7 @@ class ClarificationState(BaseModel):
 
     clarification_id: str
     questions: list[str]
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
     response: Optional[str] = None
     responded_at: Optional[datetime] = None
 
@@ -96,8 +100,8 @@ class ConversationState(BaseModel):
 
     conversation_id: str
     status: ConversationStatus = ConversationStatus.ACTIVE
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
     user_info: Optional[UserInfo] = None
     pending_clarification: Optional[ClarificationState] = None
     draft_response: Optional[str] = None

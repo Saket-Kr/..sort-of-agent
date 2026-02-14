@@ -69,11 +69,76 @@ CLARIFY_DEFINITION = ToolDefinition(
     },
 )
 
+THINK_APPROACH_DEFINITION = ToolDefinition(
+    name="think_approach",
+    description=(
+        "Communicate your current thinking approach to the user. Use this to show "
+        "your analysis process, what you're about to research, or how you plan to "
+        "construct the workflow. Keep summaries concise (1-2 lines)."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "summary": {
+                "type": "string",
+                "description": "Your current thinking approach (max 50 words)",
+            }
+        },
+        "required": ["summary"],
+    },
+)
+
+PRESENT_ANSWER_DEFINITION = ToolDefinition(
+    name="present_answer",
+    description=(
+        "Present your final comprehensive response to the user. Include workflow "
+        "summary, explanation of each block, and any identified limitations. "
+        "Use markdown formatting for readability."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "content": {
+                "type": "string",
+                "description": "Answer content in markdown format",
+            }
+        },
+        "required": ["content"],
+    },
+)
+
+SUBMIT_WORKFLOW_DEFINITION = ToolDefinition(
+    name="submit_workflow",
+    description=(
+        "Submit the completed workflow for validation. The workflow will be validated "
+        "and you will receive feedback. If validation fails, fix the issues and resubmit."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "workflow_json": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "List of workflow blocks",
+            },
+            "edges": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "List of edges connecting blocks",
+            },
+        },
+        "required": ["workflow_json", "edges"],
+    },
+)
+
 # All tool definitions
 TOOL_DEFINITIONS = [
     WEB_SEARCH_DEFINITION,
     TASK_BLOCK_SEARCH_DEFINITION,
     CLARIFY_DEFINITION,
+    THINK_APPROACH_DEFINITION,
+    PRESENT_ANSWER_DEFINITION,
+    SUBMIT_WORKFLOW_DEFINITION,
 ]
 
 

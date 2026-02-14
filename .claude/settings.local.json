@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -m pytest:*)"
+      "Bash(python -m pytest:*)",
+      "Bash(find:*)",
+      "Bash(sort:*)",
+      "Bash(python -m ruff check:*)",
+      "Bash(ruff check:*)"
     ]
   }
 }

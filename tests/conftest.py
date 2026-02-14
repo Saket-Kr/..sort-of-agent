@@ -28,10 +28,10 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
 def test_settings() -> Settings:
     """Create test settings."""
     return Settings(
-        llm_provider="vllm",
-        llm_base_url="http://localhost:8000/v1",
-        llm_api_key="test-key",
-        llm_model_name="test-model",
+        planner_llm_provider="vllm",
+        planner_llm_base_url="http://localhost:8000/v1",
+        planner_llm_api_key="test-key",
+        planner_llm_model_name="test-model",
         redis_url="",  # Use in-memory storage
         max_concurrent_connections=10,
     )

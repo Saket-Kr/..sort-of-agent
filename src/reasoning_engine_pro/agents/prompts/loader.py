@@ -1,11 +1,22 @@
 """Prompt loader utility."""
 
+import string
+from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
 
+class _SafeDict(defaultdict):
+    """Dict that returns the key placeholder for missing keys instead of raising."""
+
+    def __missing__(self, key: str) -> str:
+        return ""
+
+
 class PromptLoader:
     """Utility for loading prompt templates."""
+
+    _EXTENSIONS = (".md", ".txt")
 
     def __init__(self, templates_dir: Optional[Path] = None):
         """
@@ -20,31 +31,21 @@ class PromptLoader:
         self._templates_dir = templates_dir
 
     def load(self, name: str) -> str:
-        """
-        Load a prompt template by name.
-
-        Args:
-            name: Template name (without .txt extension)
-
-        Returns:
-            Template content
-        """
-        template_path = self._templates_dir / f"{name}.txt"
-        if not template_path.exists():
-            raise FileNotFoundError(f"Prompt template not found: {template_path}")
-
-        return template_path.read_text()
+        """Load a prompt template by name (tries .md then .txt)."""
+        for ext in self._EXTENSIONS:
+            template_path = self._templates_dir / f"{name}{ext}"
+            if template_path.exists():
+                return template_path.read_text()
+        raise FileNotFoundError(
+            f"Prompt template not found: {self._templates_dir / name}"
+        )
 
     def load_with_vars(self, name: str, **kwargs: str) -> str:
-        """
-        Load a prompt template and substitute variables.
+        """Load a prompt template and safely substitute variables.
 
-        Args:
-            name: Template name
-            **kwargs: Variables to substitute
-
-        Returns:
-            Template content with variables substituted
+        Missing template variables are replaced with empty strings instead
+        of raising KeyError. This is safer than str.format() for prompts
+        that may contain curly braces in code examples.
         """
         template = self.load(name)
-        return template.format(**kwargs)
+        return template.format_map(_SafeDict(str, **kwargs))

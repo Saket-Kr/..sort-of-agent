@@ -1,35 +1,19 @@
-"""Workflow validator."""
+"""Workflow structural validator."""
 
 import re
-from typing import Any, Optional
 
-from ..core.enums import ValidationStatus
-from ..core.exceptions import ValidationError
 from ..core.interfaces.event_emitter import IEventEmitter
-from ..core.schemas.workflow import Block, Edge, Workflow
+from ..core.interfaces.validator import IWorkflowValidator, ValidationContext, ValidationResult
+from ..core.schemas.workflow import Block, Workflow
 
 
-class ValidationResult:
-    """Result of workflow validation."""
+class StructuralValidator(IWorkflowValidator):
+    """Validates workflow structure and block references.
 
-    def __init__(self):
-        self.errors: list[str] = []
-        self.warnings: list[str] = []
-        self.status: ValidationStatus = ValidationStatus.PENDING
-
-    @property
-    def is_valid(self) -> bool:
-        return len(self.errors) == 0
-
-    def add_error(self, message: str) -> None:
-        self.errors.append(message)
-
-    def add_warning(self, message: str) -> None:
-        self.warnings.append(message)
-
-
-class WorkflowValidator:
-    """Validates workflow structure and block references."""
+    This is the first stage in the validation pipeline — fast, deterministic,
+    no LLM calls. Checks structural correctness: block IDs, edges, references,
+    flow connectivity.
+    """
 
     # Known action codes and their required inputs
     KNOWN_ACTIONS = {
@@ -56,82 +40,69 @@ class WorkflowValidator:
 
     def __init__(
         self,
-        event_emitter: Optional[IEventEmitter] = None,
+        event_emitter: IEventEmitter | None = None,
         strict_mode: bool = False,
     ):
-        """
-        Initialize workflow validator.
-
-        Args:
-            event_emitter: Optional event emitter for progress updates
-            strict_mode: If True, treat warnings as errors
-        """
         self._event_emitter = event_emitter
         self._strict_mode = strict_mode
+
+    @property
+    def name(self) -> str:
+        return "structural"
+
+    @property
+    def is_blocking(self) -> bool:
+        return True
 
     async def validate(
         self,
         workflow: Workflow,
-        conversation_id: Optional[str] = None,
+        context: ValidationContext | None = None,
     ) -> ValidationResult:
-        """
-        Validate a workflow.
+        """Validate workflow structure.
 
-        Args:
-            workflow: Workflow to validate
-            conversation_id: Optional conversation ID for progress updates
-
-        Returns:
-            ValidationResult with errors and warnings
+        Accepts either a ValidationContext (pipeline interface) or None
+        for backward compatibility with the old call signature.
         """
         result = ValidationResult()
-        result.status = ValidationStatus.IN_PROGRESS
 
-        # Progress tracking
+        conversation_id = context.conversation_id if context else None
+        event_emitter = (
+            context.event_emitter if context else self._event_emitter
+        )
+
         total_steps = 5
         current_step = 0
 
         async def emit_progress(stage: str, message: str) -> None:
-            if self._event_emitter and conversation_id:
+            if event_emitter and conversation_id:
                 progress = (current_step / total_steps) * 100
-                await self._event_emitter.emit_validation_progress(
+                await event_emitter.emit_validation_progress(
                     conversation_id, stage, progress, message, result.errors
                 )
 
-        # Step 1: Validate basic structure
         await emit_progress("structure", "Validating workflow structure...")
         self._validate_structure(workflow, result)
         current_step += 1
 
-        # Step 2: Validate blocks
         await emit_progress("blocks", "Validating blocks...")
         self._validate_blocks(workflow, result)
         current_step += 1
 
-        # Step 3: Validate edges
         await emit_progress("edges", "Validating edges...")
         self._validate_edges(workflow, result)
         current_step += 1
 
-        # Step 4: Validate references
         await emit_progress("references", "Validating output references...")
         self._validate_references(workflow, result)
         current_step += 1
 
-        # Step 5: Validate flow
         await emit_progress("flow", "Validating execution flow...")
         self._validate_flow(workflow, result)
         current_step += 1
 
-        # Finalize
-        if result.is_valid:
-            result.status = ValidationStatus.COMPLETED
-        else:
-            result.status = ValidationStatus.FAILED
-
         if self._strict_mode and result.warnings:
             result.errors.extend([f"Warning (strict): {w}" for w in result.warnings])
-            result.status = ValidationStatus.FAILED
 
         await emit_progress("complete", "Validation complete")
         return result
@@ -151,32 +122,26 @@ class WorkflowValidator:
         has_start = False
 
         for block in workflow.workflow_json:
-            # Check for duplicate block IDs
             if block.BlockId in block_ids:
                 result.add_error(f"Duplicate BlockId: {block.BlockId}")
             block_ids.add(block.BlockId)
 
-            # Check BlockId format
             if not re.match(r"^B\d{3}$", block.BlockId):
                 result.add_warning(
                     f"BlockId '{block.BlockId}' doesn't follow B### pattern"
                 )
 
-            # Check for Start block
             if block.ActionCode == "Start":
                 if has_start:
                     result.add_error("Multiple Start blocks found")
                 has_start = True
 
-            # Validate block name
             if not block.Name or not block.Name.strip():
                 result.add_error(f"Block {block.BlockId} has empty name")
 
-            # Validate action code
             if not block.ActionCode:
                 result.add_error(f"Block {block.BlockId} has no ActionCode")
 
-            # Validate known action inputs/outputs
             self._validate_block_io(block, result)
 
         if not has_start:
@@ -185,11 +150,10 @@ class WorkflowValidator:
     def _validate_block_io(self, block: Block, result: ValidationResult) -> None:
         """Validate block inputs and outputs against known action requirements."""
         if block.ActionCode not in self.KNOWN_ACTIONS:
-            return  # Unknown action, skip validation
+            return
 
         spec = self.KNOWN_ACTIONS[block.ActionCode]
         input_names = {inp.Name for inp in block.Inputs}
-        output_names = {out.Name for out in block.Outputs}
 
         for required in spec["required_inputs"]:
             if required not in input_names:
@@ -204,34 +168,28 @@ class WorkflowValidator:
         block_ids = {block.BlockId for block in workflow.workflow_json}
 
         for edge in workflow.edges:
-            # Check for duplicate edge IDs
             if edge.EdgeID in edge_ids:
                 result.add_error(f"Duplicate EdgeID: {edge.EdgeID}")
             edge_ids.add(edge.EdgeID)
 
-            # Check EdgeID format
             if not re.match(r"^E\d{3}$", edge.EdgeID):
                 result.add_warning(
                     f"EdgeID '{edge.EdgeID}' doesn't follow E### pattern"
                 )
 
-            # Check From block exists
             if edge.From not in block_ids:
                 result.add_error(
                     f"Edge {edge.EdgeID} references non-existent From block: {edge.From}"
                 )
 
-            # Check To block exists
             if edge.To not in block_ids:
                 result.add_error(
                     f"Edge {edge.EdgeID} references non-existent To block: {edge.To}"
                 )
 
-            # Check for self-loops
             if edge.From == edge.To:
                 result.add_warning(f"Edge {edge.EdgeID} is a self-loop")
 
-            # Validate edge condition
             if edge.EdgeCondition and edge.EdgeCondition not in ["true", "false"]:
                 result.add_warning(
                     f"Edge {edge.EdgeID} has unusual condition: {edge.EdgeCondition}"
@@ -241,13 +199,11 @@ class WorkflowValidator:
         self, workflow: Workflow, result: ValidationResult
     ) -> None:
         """Validate output variable references."""
-        # Collect all available outputs
         available_outputs = set()
         for block in workflow.workflow_json:
             for output in block.Outputs:
                 available_outputs.add(output.OutputVariableName)
 
-        # Check all input references
         for block in workflow.workflow_json:
             for inp in block.Inputs:
                 if inp.ReferencedOutputVariableName:
@@ -264,9 +220,8 @@ class WorkflowValidator:
 
         block_ids = {block.BlockId for block in workflow.workflow_json}
 
-        # Check connectivity
-        outgoing = {bid: [] for bid in block_ids}
-        incoming = {bid: [] for bid in block_ids}
+        outgoing: dict[str, list[str]] = {bid: [] for bid in block_ids}
+        incoming: dict[str, list[str]] = {bid: [] for bid in block_ids}
 
         for edge in workflow.edges:
             if edge.From in outgoing:
@@ -274,16 +229,13 @@ class WorkflowValidator:
             if edge.To in incoming:
                 incoming[edge.To].append(edge.From)
 
-        # Find start block
         start_block = workflow.get_start_block()
         if not start_block:
             return
 
-        # Check if start block has incoming edges
         if incoming.get(start_block.BlockId):
             result.add_error("Start block should not have incoming edges")
 
-        # Check for unreachable blocks (simple check)
         reachable = {start_block.BlockId}
         queue = [start_block.BlockId]
 
@@ -298,7 +250,6 @@ class WorkflowValidator:
         for block_id in unreachable:
             result.add_warning(f"Block {block_id} may be unreachable from Start")
 
-        # Check for blocks with no outgoing edges (potential endpoints)
         non_start_blocks = block_ids - {start_block.BlockId}
         for block_id in non_start_blocks:
             if not outgoing.get(block_id) and not incoming.get(block_id):
@@ -307,7 +258,6 @@ class WorkflowValidator:
     def validate_sync(self, workflow: Workflow) -> ValidationResult:
         """Synchronous validation (for use in non-async contexts)."""
         result = ValidationResult()
-        result.status = ValidationStatus.IN_PROGRESS
 
         self._validate_structure(workflow, result)
         self._validate_blocks(workflow, result)
@@ -315,7 +265,8 @@ class WorkflowValidator:
         self._validate_references(workflow, result)
         self._validate_flow(workflow, result)
 
-        result.status = (
-            ValidationStatus.COMPLETED if result.is_valid else ValidationStatus.FAILED
-        )
         return result
+
+
+# Backward-compat alias
+WorkflowValidator = StructuralValidator

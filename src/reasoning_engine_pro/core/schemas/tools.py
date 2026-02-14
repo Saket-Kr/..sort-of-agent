@@ -88,3 +88,53 @@ class ClarificationResponse(BaseModel):
 
     clarification_id: str
     response: str
+
+
+# --- Output Tools ---
+
+
+class ThinkApproachInput(BaseModel):
+    """Input for think_approach tool."""
+
+    summary: str = Field(
+        ..., description="Your current thinking approach (1-2 lines, max 50 words)"
+    )
+
+
+class ThinkApproachOutput(BaseModel):
+    """Output from think_approach tool."""
+
+    acknowledged: bool = True
+
+
+class PresentAnswerInput(BaseModel):
+    """Input for present_answer tool."""
+
+    content: str = Field(
+        ..., description="Answer content to present to the user (markdown formatted)"
+    )
+
+
+class PresentAnswerOutput(BaseModel):
+    """Output from present_answer tool."""
+
+    delivered: bool = True
+
+
+class SubmitWorkflowInput(BaseModel):
+    """Input for submit_workflow tool."""
+
+    workflow_json: list[dict] = Field(
+        ..., description="List of workflow blocks"
+    )
+    edges: list[dict] = Field(
+        ..., description="List of edges connecting blocks"
+    )
+
+
+class SubmitWorkflowOutput(BaseModel):
+    """Output from submit_workflow tool."""
+
+    status: Literal["accepted", "needs_revision"] = "accepted"
+    errors: list[str] = Field(default_factory=list)
+    workflow_id: Optional[str] = None

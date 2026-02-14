@@ -1,10 +1,15 @@
 """Response parsers for the integrated search endpoint.
 
-The integrated endpoint response format may vary. These parsers
-try multiple plausible key names and return empty lists on
-unparseable responses rather than crashing.
+The integrated endpoint returns a JSON response with:
+- "query": the query string
+- "content": a string containing XML-like tagged sections for each search type
+- "sources": list (usually empty)
+
+Each section in "content" uses tags like <web_search>...</web_search> and contains
+Python repr-style search result objects that need regex parsing.
 """
 
+import re
 from typing import Any
 
 from ....core.schemas.tools import TaskBlockSearchResult, WebSearchResult
@@ -18,41 +23,40 @@ def parse_web_search_results(
     max_results: int = 5,
 ) -> list[WebSearchResult]:
     """Parse web search results from integrated endpoint response."""
-    raw_results = (
-        response_data.get("web_search_results")
-        or _extract_nested(response_data, "web_search", "results")
-        or response_data.get("results")
-    )
+    content = response_data.get("content", "")
+    if not isinstance(content, str):
+        logger.warning("Unexpected response: content is not a string")
+        return []
 
-    if not isinstance(raw_results, list):
+    section = _extract_section(content, "web_search")
+    if not section:
         logger.warning(
-            "Unexpected web search response format",
-            keys=list(response_data.keys()) if isinstance(response_data, dict) else str(type(response_data)),
+            "No <web_search> section found in response",
+            content_preview=content[:200],
         )
-        # Fallback: if there is a summary string, return it as a single result
-        summary = (
-            response_data.get("summary")
-            or response_data.get("content")
-            or _extract_nested(response_data, "web_search", "summary")
-        )
-        if summary:
-            return [WebSearchResult(
-                title="Integrated Search Result",
-                url="",
-                snippet=str(summary)[:500],
-                source="integrated",
-            )]
         return []
 
     results: list[WebSearchResult] = []
-    for i, item in enumerate(raw_results[:max_results]):
-        if isinstance(item, dict):
+    for match in re.finditer(r"SearchResult\(", section):
+        start = match.start()
+        block = _extract_balanced_parens(section, start + len("SearchResult"))
+        if not block:
+            continue
+
+        title = _extract_field(block, "title") or ""
+        url = _extract_field(block, "url") or ""
+        snippet = _extract_field(block, "snippet") or ""
+
+        if title or url:
             results.append(WebSearchResult(
-                title=item.get("title", f"Result {i + 1}"),
-                url=item.get("url", item.get("link", "")),
-                snippet=item.get("snippet", item.get("description", item.get("content", "")))[:500],
+                title=title[:200],
+                url=url,
+                snippet=snippet[:500],
                 source="integrated",
             ))
+
+        if len(results) >= max_results:
+            break
 
     return results
 
@@ -63,47 +67,102 @@ def parse_task_block_search_results(
     max_results: int = 10,
 ) -> list[TaskBlockSearchResult]:
     """Parse task block search results from integrated endpoint response."""
-    key = f"{search_type}_task_block_search_results"
-    alt_key = "plain_elastic_task_block_search_results" if search_type == "elastic" else key
+    content = response_data.get("content", "")
+    if not isinstance(content, str):
+        logger.warning("Unexpected response: content is not a string")
+        return []
 
-    raw_results = (
-        response_data.get(key)
-        or response_data.get(alt_key)
-        or _extract_nested(response_data, f"{search_type}_task_block_search", "results")
-        or response_data.get("task_block_results")
-        or response_data.get("results")
-    )
+    # Try the specific section tag based on search type
+    if search_type == "elastic":
+        section = _extract_section(content, "plain_elastic_task_block_search")
+    else:
+        section = _extract_section(content, "llm_task_block_search")
 
-    if not isinstance(raw_results, list):
+    if not section:
         logger.warning(
-            "Unexpected task block search response format",
+            "No task block search section found in response",
             search_type=search_type,
-            keys=list(response_data.keys()) if isinstance(response_data, dict) else str(type(response_data)),
+            content_preview=content[:200],
         )
         return []
 
+    # LLM task block search returns plain text summary, not structured results
+    if search_type == "llm" and "TaskSearchResult(" not in section:
+        return [TaskBlockSearchResult(
+            block_id="llm-summary",
+            name="LLM Search Summary",
+            action_code="",
+            description=section.strip()[:1000],
+            relevance_score=1.0,
+        )]
+
+    # Parse structured TaskSearchResult objects (elastic search format)
     results: list[TaskBlockSearchResult] = []
-    for item in raw_results[:max_results]:
-        if isinstance(item, dict):
-            results.append(TaskBlockSearchResult(
-                block_id=item.get("block_id", item.get("id", "")),
-                name=item.get("name", ""),
-                action_code=item.get("action_code", item.get("actionCode", "")),
-                description=item.get("description"),
-                inputs=item.get("inputs", []),
-                outputs=item.get("outputs", []),
-                relevance_score=float(item.get("relevance_score", item.get("score", 0.0))),
-            ))
+    for match in re.finditer(r"TaskSearchResult\(", section):
+        start = match.start()
+        block = _extract_balanced_parens(section, start + len("TaskSearchResult"))
+        if not block:
+            continue
+
+        block_id = _extract_field(block, "id") or ""
+        name = _extract_field(block, "name") or ""
+        action_code = _extract_field(block, "action_code") or ""
+        description = _extract_field(block, "description") or ""
+        score_str = _extract_numeric_field(block, "score") or "0"
+        similarity_str = _extract_numeric_field(block, "similarity") or "0"
+
+        results.append(TaskBlockSearchResult(
+            block_id=block_id,
+            name=name,
+            action_code=action_code,
+            description=description[:1000] if description else None,
+            relevance_score=float(similarity_str or score_str or 0),
+        ))
+
+        if len(results) >= max_results:
+            break
 
     return results
 
 
-def _extract_nested(data: dict[str, Any], *keys: str) -> Any:
-    """Safely extract nested dict value."""
-    current = data
-    for key in keys:
-        if isinstance(current, dict):
-            current = current.get(key)
-        else:
-            return None
-    return current
+def _extract_section(content: str, tag: str) -> str | None:
+    """Extract content between <tag>...</tag> from the response content string."""
+    pattern = rf"<{re.escape(tag)}>\s*(.*?)\s*</{re.escape(tag)}>"
+    match = re.search(pattern, content, re.DOTALL)
+    return match.group(1) if match else None
+
+
+def _extract_balanced_parens(text: str, start: int) -> str | None:
+    """Extract the content of balanced parentheses starting at position `start`."""
+    if start >= len(text) or text[start] != "(":
+        return None
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return text[start + 1 : i]
+    return None
+
+
+def _extract_field(block: str, field_name: str) -> str | None:
+    """Extract a string field value from a repr-style block like `field='value'`."""
+    pattern = rf"{field_name}='((?:[^'\\]|\\.)*)'"
+    match = re.search(pattern, block)
+    if match:
+        return match.group(1).replace("\\'", "'").replace("\\n", "\n")
+    # Try double quotes
+    pattern = rf'{field_name}="((?:[^"\\]|\\.)*)"'
+    match = re.search(pattern, block)
+    if match:
+        return match.group(1).replace('\\"', '"').replace("\\n", "\n")
+    return None
+
+
+def _extract_numeric_field(block: str, field_name: str) -> str | None:
+    """Extract a numeric field value from a repr-style block like `field=0.95`."""
+    pattern = rf"{field_name}=([\d.]+)"
+    match = re.search(pattern, block)
+    return match.group(1) if match else None

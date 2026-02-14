@@ -1,6 +1,7 @@
 """WebSocket connection manager."""
 
 import asyncio
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 from fastapi import WebSocket
@@ -13,11 +14,29 @@ logger = get_logger(__name__)
 
 
 class WebSocketEventEmitter(IEventEmitter):
-    """Event emitter that sends events over WebSocket."""
+    """Event emitter that sends events over WebSocket.
 
-    def __init__(self, websocket: WebSocket, conversation_id: str):
+    Payload formats are aligned with the parent repo's WebSocket protocol
+    so the existing frontend can consume them without changes.
+    """
+
+    def __init__(
+        self,
+        websocket: WebSocket,
+        conversation_id: str,
+        message_id: Optional[str] = None,
+    ):
         self._websocket = websocket
         self._conversation_id = conversation_id
+        self._message_id = message_id
+
+    def set_message_id(self, message_id: str) -> None:
+        """Set the message_id for subsequent events."""
+        self._message_id = message_id
+
+    def _resolve_message_id(self, message_id: Optional[str]) -> Optional[str]:
+        """Use explicit message_id if provided, otherwise fall back to instance default."""
+        return message_id or self._message_id
 
     async def emit(self, event_type: EventType, payload: dict[str, Any]) -> None:
         """Emit an event over WebSocket."""
@@ -31,51 +50,73 @@ class WebSocketEventEmitter(IEventEmitter):
         except Exception as e:
             logger.error("Failed to emit event", event=event_type.value, error=str(e))
 
-    async def emit_stream_chunk(self, conversation_id: str, chunk: str) -> None:
+    async def emit_stream_chunk(
+        self,
+        conversation_id: str,
+        chunk: str,
+        message_id: Optional[str] = None,
+    ) -> None:
         """Emit a streaming response chunk."""
         await self.emit(
             EventType.STREAM_RESPONSE,
             {
                 "chat_id": conversation_id,
-                "chunk": chunk,
+                "message_id": self._resolve_message_id(message_id),
+                "content": chunk,
                 "is_complete": False,
+                "timestamp": datetime.now(tz=UTC).isoformat(),
             },
         )
 
     async def emit_error(
-        self, conversation_id: str | None, error_code: str, message: str
+        self,
+        conversation_id: str | None,
+        error_code: str,
+        message: str,
+        message_id: Optional[str] = None,
     ) -> None:
         """Emit an error event."""
         await self.emit(
             EventType.ERROR,
             {
                 "chat_id": conversation_id,
+                "message_id": self._resolve_message_id(message_id),
                 "error_code": error_code,
                 "message": message,
             },
         )
 
     async def emit_clarification_request(
-        self, conversation_id: str, clarification_id: str, questions: list[str]
+        self,
+        conversation_id: str,
+        clarification_id: str,
+        questions: list[str],
+        message_id: Optional[str] = None,
     ) -> None:
         """Emit a clarification request event."""
         await self.emit(
             EventType.CLARIFICATION_REQUESTED,
             {
                 "chat_id": conversation_id,
+                "message_id": self._resolve_message_id(message_id),
                 "clarification_id": clarification_id,
                 "questions": questions,
             },
         )
 
     async def emit_tool_started(
-        self, conversation_id: str, tool_name: str, event_type: EventType
+        self,
+        conversation_id: str,
+        tool_name: str,
+        event_type: EventType,
+        message_id: Optional[str] = None,
     ) -> None:
         """Emit a tool execution started event."""
         await self.emit(
             event_type,
             {
                 "chat_id": conversation_id,
+                "message_id": self._resolve_message_id(message_id),
                 "tool_name": tool_name,
             },
         )
@@ -87,12 +128,14 @@ class WebSocketEventEmitter(IEventEmitter):
         results: list[dict[str, Any]],
         query_count: int,
         total_results: int,
+        message_id: Optional[str] = None,
     ) -> None:
         """Emit tool results event."""
         await self.emit(
             event_type,
             {
                 "chat_id": conversation_id,
+                "message_id": self._resolve_message_id(message_id),
                 "results": results,
                 "query_count": query_count,
                 "total_results": total_results,
@@ -104,13 +147,16 @@ class WebSocketEventEmitter(IEventEmitter):
         conversation_id: str,
         workflow: dict[str, Any],
         job_name: str | None = None,
+        message_id: Optional[str] = None,
     ) -> None:
         """Emit workflow output event."""
         await self.emit(
             EventType.OPKEY_WORKFLOW_JSON,
             {
                 "chat_id": conversation_id,
-                "workflow": workflow,
+                "message_id": self._resolve_message_id(message_id),
+                "graph_data": workflow,
+                "json_data": workflow,
                 "job_name": job_name,
             },
         )
@@ -122,16 +168,63 @@ class WebSocketEventEmitter(IEventEmitter):
         progress: float,
         message: str,
         errors: list[str] | None = None,
+        message_id: Optional[str] = None,
     ) -> None:
         """Emit validation progress update."""
         await self.emit(
             EventType.VALIDATOR_PROGRESS_UPDATE,
             {
                 "chat_id": conversation_id,
+                "message_id": self._resolve_message_id(message_id),
                 "stage": stage,
                 "progress": progress,
                 "message": message,
                 "errors": errors or [],
+            },
+        )
+
+    async def emit_think_approach(
+        self,
+        conversation_id: str,
+        content: str,
+        message_id: Optional[str] = None,
+    ) -> None:
+        """Emit think_approach event."""
+        await self.emit(
+            EventType.THINK_APPROACH,
+            {
+                "chat_id": conversation_id,
+                "message_id": self._resolve_message_id(message_id),
+                "think_approach": content,
+            },
+        )
+
+    async def emit_final_answer(
+        self,
+        conversation_id: str,
+        content: str,
+        message_id: Optional[str] = None,
+    ) -> None:
+        """Emit final_answer event."""
+        await self.emit(
+            EventType.FINAL_ANSWER,
+            {
+                "chat_id": conversation_id,
+                "message_id": self._resolve_message_id(message_id),
+                "answer_content": content,
+                "answer_json_content": "",
+            },
+        )
+
+    async def emit_chat_ended(
+        self,
+        conversation_id: str,
+    ) -> None:
+        """Emit chat_ended event."""
+        await self.emit(
+            EventType.CHAT_ENDED,
+            {
+                "chat_id": conversation_id,
             },
         )
 

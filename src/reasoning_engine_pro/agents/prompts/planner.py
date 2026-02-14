@@ -1,99 +1,73 @@
-"""Planner system prompt."""
+"""Planner system prompt builder."""
 
 from typing import Optional
+
+from .domain_data import (
+    format_block_type_descriptions,
+    format_config_sequences,
+    format_pillar_module_data,
+)
+from .loader import PromptLoader
+
+_loader = PromptLoader()
 
 
 def get_planner_system_prompt(
     user_info: Optional[dict] = None,
     few_shot_examples: Optional[str] = None,
 ) -> str:
-    """
-    Get the system prompt for the planner agent.
+    """Build the planner system prompt from template + domain data.
 
-    Args:
-        user_info: Optional user information to include
-        few_shot_examples: Optional few-shot workflow examples
-
-    Returns:
-        Complete system prompt
+    Falls back to a minimal inline prompt if the template file is missing.
     """
     user_context = ""
     if user_info:
-        user_context = f"""
-## User Context
-- User ID: {user_info.get('user_id', 'Unknown')}
-- Environment: {user_info.get('environment', 'Unknown')}
-- Tenant: {user_info.get('tenant_id', 'Unknown')}
-"""
+        user_context = (
+            "\n## User Context\n"
+            f"- User ID: {user_info.get('user_id', 'Unknown')}\n"
+            f"- Username: {user_info.get('username', 'Unknown')}\n"
+            f"- Email: {user_info.get('email', 'Unknown')}\n"
+            f"- Domain: {user_info.get('domain', 'Unknown')}\n"
+        )
 
     examples_section = ""
     if few_shot_examples:
-        examples_section = f"""
-## Example Workflows
-{few_shot_examples}
-"""
+        examples_section = f"\n## Example Workflows\n{few_shot_examples}\n"
 
-    return f"""You are an expert workflow planner for enterprise automation systems. Your task is to help users create workflows by understanding their requirements and generating structured workflow definitions.
+    try:
+        return _loader.load_with_vars(
+            "planner_system",
+            block_type_descriptions=format_block_type_descriptions(),
+            config_sequences=format_config_sequences(),
+            pillar_module_data=format_pillar_module_data(),
+            user_context=user_context,
+            few_shot_examples=examples_section,
+        )
+    except FileNotFoundError:
+        # Fallback: minimal inline prompt (should not happen in production)
+        return _build_fallback_prompt(user_context, examples_section)
+
+
+def _build_fallback_prompt(user_context: str, examples_section: str) -> str:
+    return f"""You are an expert workflow planner for enterprise automation systems.
 
 ## Your Role
 1. Understand the user's automation requirements
-2. Search for relevant information when needed using web_search
+2. Search for relevant information using web_search
 3. Find appropriate task blocks using task_block_search
 4. Ask clarifying questions using clarify when requirements are ambiguous
-5. Generate complete, validated workflow JSON
+5. Use think_approach to communicate your thinking
+6. Use present_answer to present your response
+7. Use submit_workflow to submit the completed workflow
 
 ## Workflow Structure
-Workflows consist of:
-- **Blocks**: Individual automation steps with inputs and outputs
-- **Edges**: Connections between blocks defining execution flow
-
-### Block Format
-```json
-{{
-    "BlockId": "B001",
-    "Name": "Human-readable name",
-    "ActionCode": "ActionCodeName",
-    "Inputs": [
-        {{"Name": "InputName", "StaticValue": "value"}},
-        {{"Name": "InputName", "ReferencedOutputVariableName": "op-B001-OutputName"}}
-    ],
-    "Outputs": [
-        {{"Name": "OutputName", "OutputVariableName": "op-B001-OutputName"}}
-    ]
-}}
-```
-
-### Edge Format
-```json
-{{
-    "EdgeID": "E001",
-    "From": "B001",
-    "To": "B002",
-    "EdgeCondition": null  // or "true"/"false" for conditionals
-}}
-```
+Workflows consist of blocks (automation steps) and edges (connections).
 
 ## Guidelines
-1. Always start workflows with a "Start" block (ActionCode: "Start")
+1. Always start with a "Start" block (ActionCode: "Start")
 2. Use sequential BlockIds (B001, B002, ...) and EdgeIds (E001, E002, ...)
-3. Reference outputs using the pattern: op-{{BlockId}}-{{OutputName}}
-4. Validate that all referenced outputs exist before generating final workflow
-5. Include appropriate error handling blocks when necessary
-
-## Tool Usage
-- Use **web_search** when you need external information about systems, processes, or technical details
-- Use **task_block_search** to find available automation blocks and their specifications
-- Use **clarify** when user requirements are ambiguous or incomplete
-
-## Output Format
-When you have gathered enough information, output the complete workflow in JSON format:
-```json
-{{
-    "workflow_json": [...blocks...],
-    "edges": [...edges...]
-}}
-```
+3. Reference outputs using: op-{{BlockId}}-{{OutputName}}
+4. Validate all referenced outputs exist before submitting
 {user_context}
 {examples_section}
-Remember to be thorough in understanding requirements before generating workflows. Ask clarifying questions when needed rather than making assumptions.
 """

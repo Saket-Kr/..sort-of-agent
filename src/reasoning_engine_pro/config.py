@@ -1,9 +1,18 @@
 """Application configuration using Pydantic Settings."""
 
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal
 
+from pydantic import computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Maps legacy env var / constructor names to their new field names.
+_LEGACY_LLM_FIELD_MAP: dict[str, str] = {
+    "llm_provider": "planner_llm_provider",
+    "llm_base_url": "planner_llm_base_url",
+    "llm_api_key": "planner_llm_api_key",
+    "llm_model_name": "planner_llm_model_name",
+}
 
 
 class Settings(BaseSettings):
@@ -15,11 +24,36 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # LLM Configuration
-    llm_provider: Literal["vllm", "openai"] = "vllm"
-    llm_base_url: str = "http://localhost:8000/v1"
-    llm_api_key: str = ""
-    llm_model_name: str = "default-model"
+    @model_validator(mode="before")
+    @classmethod
+    def _remap_legacy_llm_fields(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Accept old LLM_* env vars / kwargs and remap to PLANNER_LLM_*."""
+        for old_name, new_name in _LEGACY_LLM_FIELD_MAP.items():
+            if old_name in data and new_name not in data:
+                data[new_name] = data.pop(old_name)
+            elif old_name in data:
+                data.pop(old_name)
+        return data
+
+    # Planner LLM Configuration (primary reasoning model)
+    planner_llm_provider: Literal["vllm", "openai"] = "vllm"
+    planner_llm_base_url: str = "http://localhost:8000/v1"
+    planner_llm_api_key: str = ""
+    planner_llm_model_name: str = "default-model"
+
+    # Validator LLM Configuration (cheaper model for validation, referencing, summarization, job naming)
+    validator_llm_base_url: str = "http://localhost:8000/v1"
+    validator_llm_api_key: str = ""
+    validator_llm_model_name: str = "default-model"
+
+    # Feature Flags
+    query_refinement_mode: Literal["separate", "inline", "disabled"] = "disabled"
+    enable_referencing: bool = False
+    token_summarization_limit: int = 100000
+
+    # Heartbeat
+    heartbeat_interval_seconds: int = 20
+    heartbeat_max_missed: int = 3
 
     # Redis Configuration
     redis_url: str = "redis://localhost:6379"
@@ -65,6 +99,27 @@ class Settings(BaseSettings):
     langfuse_public_key: str = ""
     langfuse_host: str = "https://cloud.langfuse.com"
     log_level: str = "INFO"
+
+    # Backward-compatible aliases — existing code using settings.llm_provider still works.
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def llm_provider(self) -> str:
+        return self.planner_llm_provider
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def llm_base_url(self) -> str:
+        return self.planner_llm_base_url
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def llm_api_key(self) -> str:
+        return self.planner_llm_api_key
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def llm_model_name(self) -> str:
+        return self.planner_llm_model_name
 
 
 @lru_cache

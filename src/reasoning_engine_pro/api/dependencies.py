@@ -1,21 +1,24 @@
 """FastAPI dependency injection."""
 
-from functools import lru_cache
 from typing import Optional
 
 from ..agents.few_shot import FewShotRetriever
 from ..agents.job_name import JobNameGenerator
 from ..agents.orchestrator import ConversationOrchestrator
 from ..agents.planner import PlannerAgent
+from ..agents.preprocessors.factory import QueryPreprocessorFactory
+from ..agents.referencing import ReferencingAgent
+from ..agents.summarizer import MessageSummarizer
 from ..agents.validator import WorkflowValidator
 from ..config import Settings, get_settings
 from ..core.interfaces.event_emitter import IEventEmitter
+from ..core.interfaces.llm_provider import ILLMProvider
 from ..core.interfaces.storage import IConversationStorage
 from ..llm.factory import LLMProviderFactory
 from ..observability.tracing import LangfuseTracer
+from ..services.search.factory import SearchServiceFactory
 from ..services.storage.memory import InMemoryStorage
 from ..services.storage.redis import RedisStorage
-from ..services.search.factory import SearchServiceFactory
 from ..tools.factory import ToolFactory
 
 
@@ -26,12 +29,13 @@ class Dependencies:
 
     def __init__(self, settings: Settings):
         self.settings = settings
-        self._storage: Optional[IConversationStorage] = None
-        self._orchestrator: Optional[ConversationOrchestrator] = None
-        self._tracer: Optional[LangfuseTracer] = None
+        self._storage: IConversationStorage | None = None
+        self._orchestrator: ConversationOrchestrator | None = None
+        self._tracer: LangfuseTracer | None = None
+        self._validator_llm: ILLMProvider | None = None
 
     @classmethod
-    def get_instance(cls, settings: Optional[Settings] = None) -> "Dependencies":
+    def get_instance(cls, settings: Settings | None = None) -> "Dependencies":
         """Get or create singleton instance."""
         if cls._instance is None:
             if settings is None:
@@ -69,31 +73,58 @@ class Dependencies:
             )
         return self._tracer
 
+    def get_validator_llm(self) -> ILLMProvider:
+        """Get validator LLM provider (lazy, cached)."""
+        if self._validator_llm is None:
+            self._validator_llm = LLMProviderFactory.create_validator_from_settings(
+                self.settings
+            )
+        return self._validator_llm
+
     async def get_orchestrator(
-        self, event_emitter: Optional[IEventEmitter] = None
+        self, event_emitter: IEventEmitter | None = None
     ) -> ConversationOrchestrator:
         """Get orchestrator instance."""
         storage = await self.get_storage()
+        validator_llm = self.get_validator_llm()
 
-        # Create LLM provider
-        llm = LLMProviderFactory.create_from_settings(self.settings)
+        # Create planner LLM provider
+        llm = LLMProviderFactory.create_planner_from_settings(self.settings)
+
+        # Create summarizer for token management
+        summarizer = MessageSummarizer(llm_provider=validator_llm)
 
         # Create tools
         tool_registry = ToolFactory.create_all(self.settings)
 
-        # Create planner
+        # Create planner (with summarizer for token management)
         planner = PlannerAgent(
             llm_provider=llm,
             tool_registry=tool_registry,
             event_emitter=event_emitter,
             max_iterations=self.settings.planner_max_iterations,
+            summarizer=summarizer,
+            token_limit=self.settings.token_summarization_limit,
         )
 
         # Create validator
         validator = WorkflowValidator(event_emitter=event_emitter)
 
-        # Create job name generator
-        job_name_gen = JobNameGenerator()
+        # Create job name generator (with LLM for async generation)
+        job_name_gen = JobNameGenerator(llm_provider=validator_llm)
+
+        # Create referencing agent (fills workflow inputs from context)
+        referencing = ReferencingAgent(
+            llm_provider=validator_llm,
+            event_emitter=event_emitter,
+        ) if self.settings.enable_referencing else None
+
+        # Create query preprocessor
+        preprocessor = QueryPreprocessorFactory.create(
+            settings=self.settings,
+            llm_provider=llm,
+            event_emitter=event_emitter,
+        )
 
         # Create few-shot retriever
         few_shot = FewShotRetriever.from_settings(self.settings)
@@ -105,6 +136,8 @@ class Dependencies:
             job_name_generator=job_name_gen,
             few_shot_retriever=few_shot,
             event_emitter=event_emitter,
+            preprocessor=preprocessor,
+            referencing=referencing,
         )
 
     async def cleanup(self) -> None:
